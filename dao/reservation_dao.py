@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.reservation import Reservation
@@ -30,3 +30,11 @@ class ReservationDAO:
         ])
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+
+    async def delete_by_params(self, filters: dict):
+        query = delete(Reservation).where(*[
+            getattr(Reservation, key) == value
+            for key, value in filters.items()
+        ])
+        result = await self.session.execute(query)
+        return result.rowcount

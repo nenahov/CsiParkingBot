@@ -10,9 +10,11 @@ class DriverDAO:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, chat_id: int, username: Optional[str] = None) -> Driver:
+    async def create(self, chat_id: int, username: Optional[str] = None, title: Optional[str] = None,
+                     desc: Optional[str] = None,
+                     enabled: bool = False, ) -> Driver:
         """Создание нового водителя"""
-        driver = Driver(chat_id=chat_id, username=username)
+        driver = Driver(chat_id=chat_id, username=username, title=title, description=desc, enabled=enabled)
         self.session.add(driver)
         await self.session.commit()
         return driver

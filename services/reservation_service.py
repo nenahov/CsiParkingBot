@@ -27,11 +27,10 @@ class ReservationService:
         return await self.dao.get_by_spot_and_day(spot_id, day)
 
     async def delete_reservation(self, driver_id: int, spot_id: int, day: int):
-        reservation = await self.dao.get_by_params({
+        deleted = await self.dao.delete_by_params({
             "driver_id": driver_id,
             "parking_spot_id": spot_id,
             "day_of_week": day
         })
-        if reservation:
-            await self.session.delete(reservation)
+        if deleted > 0:
             await self.session.commit()

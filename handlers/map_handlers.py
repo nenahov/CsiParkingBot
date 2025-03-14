@@ -24,7 +24,7 @@ async def map_command(message: Message):
         driver_service = DriverService(session)
         driver = await driver_service.get_by_chat_id(message.from_user.id)
 
-        if not driver:
+        if not driver or not driver.enabled:
             await message.answer("Сначала зарегистрируйтесь!")
             return
 
@@ -66,7 +66,7 @@ async def spot_selection(message: Message, is_new: bool):
 
         for spot in spots:
             builder.button(
-                text=f"Место {spot.id}",
+                text=f"{spot.id}",
                 callback_data=f"select-spot_{spot.id}"
             )
         builder.adjust(3)

@@ -19,5 +19,5 @@ class ParkingSpot(Base):
     width = Column(Integer)
     height = Column(Integer)
 
-    drivers = relationship("Driver", secondary=parking_spot_driver_association)
+    drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots")
     reservations = relationship("Reservation", back_populates="parking_spot")

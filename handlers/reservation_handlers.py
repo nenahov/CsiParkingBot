@@ -10,7 +10,6 @@ from services.reservation_service import ReservationService
 
 router = Router()
 
-
 async def get_weekdays_keyboard(chat_id: int, spot_id: int, current_day: int) -> InlineKeyboardMarkup:
     """Генератор клавиатуры с днями недели"""
     days = [

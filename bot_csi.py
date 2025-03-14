@@ -15,9 +15,9 @@ async def main():
 
     # await insert_test_data()
 
-    dp.include_router(main_handlers.router)
     dp.include_router(map_handlers.router)
     dp.include_router(reservation_handlers.router)
+    dp.include_router(main_handlers.router)
 
     await dp.start_polling(bot)
 
