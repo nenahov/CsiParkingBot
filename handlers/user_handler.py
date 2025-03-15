@@ -17,6 +17,10 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver):
     builder.add(InlineKeyboardButton(text="Покинуть очередь", switch_inline_query_current_chat='Покинуть очередь'))
     builder.add(InlineKeyboardButton(text="Приеду", switch_inline_query_current_chat='Приеду сегодня'))
     builder.add(InlineKeyboardButton(text="Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+    if message.chat.type == 'private':
+        builder.add(InlineKeyboardButton(text="📅 Редактировать расписание", callback_data='edit_schedule'))
+        builder.add(InlineKeyboardButton(text="👤 Редактировать профиль", callback_data='edit_profile'))
+        builder.add(InlineKeyboardButton(text="📝 Помощь", switch_inline_query_current_chat='все доступные команды'))
     builder.adjust(2)
 
     answer = text(f"[{driver.title}](tg://user?id={message.from_user.id})",
