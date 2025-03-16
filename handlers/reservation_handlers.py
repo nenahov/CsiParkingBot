@@ -9,29 +9,6 @@ from services.reservation_service import ReservationService
 router = Router()
 
 
-async def get_weekdays_keyboard(chat_id: int, session, driver, spot_id: int, current_day: int) -> InlineKeyboardMarkup:
-    """Генератор клавиатуры с днями недели"""
-    days = [
-        ("Пн", 0), ("Вт", 1), ("Ср", 2),
-        ("Чт", 3), ("Пт", 4), ("Сб", 5), ("Вс", 6)
-    ]
-    reservation_service = ReservationService(session)
-    builder = InlineKeyboardBuilder()
-    for day_name, day_num in days:
-        reservations = await reservation_service.get_spot_reservations(spot_id, day_num)
-        status = "🟠" if any(res.driver_id == driver.id for res in reservations) else ("🔴" if reservations else "⚪️")
-        builder.add(InlineKeyboardButton(
-            text=f"{status} {day_name}",
-            callback_data=f"choose-day_{spot_id}_{day_num}"
-        ))
-    builder.adjust(4)
-    builder.add(InlineKeyboardButton(
-        text="⬅️ Назад",
-        callback_data=f"choose-spots"
-    ))
-    return builder.as_markup()
-
-
 @router.callback_query(F.data.startswith("choose-day_"), flags={"check_driver": True})
 async def handle_day_selection(callback: CallbackQuery, session, driver):
     _, spot_id, day = callback.data.split("_")
@@ -104,6 +81,34 @@ async def start_reservation_process(callback: CallbackQuery, session, driver):
     current_day = datetime.today().weekday()  # 0-6 (пн-вс)
 
     await callback.message.edit_text(
-        text=f"Выбрано место {spot_id}.\n\n🟠 - зарезервировано Вами, \n🔴 - занято кем-то, \n⚪️ - свободно.\n\nВыберите день:",
-        reply_markup=await get_weekdays_keyboard(callback.from_user.id, session, driver, spot_id, current_day)
+        text=f"Выбрано место {spot_id}.\n\n🔴 - зарезервировано кем-то,\n🟡 - зарезервировано кем-то и Вами,\n🟢 - зарезервировано только Вами,\n⚪ - свободно.\n\n✔️ - текущий день недели.\n\nВыберите день:",
+        reply_markup=await get_weekdays_keyboard(session, driver, spot_id, current_day),
+        parse_mode="Markdown"
     )
+
+
+async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int) -> InlineKeyboardMarkup:
+    """Генератор клавиатуры с днями недели"""
+    days = [
+        ("Пн", 0), ("Вт", 1), ("Ср", 2),
+        ("Чт", 3), ("Пт", 4), ("Сб", 5), ("Вс", 6)
+    ]
+    reservation_service = ReservationService(session)
+    builder = InlineKeyboardBuilder()
+    for day_name, day_num in days:
+        reservations = await reservation_service.get_spot_reservations(spot_id, day_num)
+        me = any(res.driver_id == driver.id for res in reservations)
+        other = any(res.driver_id != driver.id for res in reservations)
+        # 🔴- other and not me, 🟠 - other and me, 🟡 - only me, 🟢 - free
+        status = "🔴" if other and not me else ("🟡" if other and me else ("🟢" if me else "⚪️"))
+
+        builder.add(InlineKeyboardButton(
+            text=f"{status} {day_name}" if day_num != current_day else f"{status} {day_name} ✔️",
+            callback_data=f"choose-day_{spot_id}_{day_num}"
+        ))
+    builder.adjust(4)
+    builder.add(InlineKeyboardButton(
+        text="⬅️ Назад",
+        callback_data=f"choose-spots"
+    ))
+    return builder.as_markup()

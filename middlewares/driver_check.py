@@ -2,7 +2,7 @@ from typing import Callable, Awaitable, Dict, Any
 
 from aiogram import BaseMiddleware
 from aiogram.dispatcher.flags import get_flag
-from aiogram.types import TelegramObject
+from aiogram.types import TelegramObject, CallbackQuery
 
 from services.driver_service import DriverService
 
@@ -35,4 +35,6 @@ class DriverCheckMiddleware(BaseMiddleware):
             )
             return
         data["driver"] = driver
+        data["is_private"] = event.chat.type == 'private' if not isinstance(event,
+                                                                            CallbackQuery) else event.message.chat.type == 'private'
         return await handler(event, data)

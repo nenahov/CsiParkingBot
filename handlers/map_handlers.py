@@ -1,29 +1,29 @@
+import re
 from datetime import datetime
 from io import BytesIO
 
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, or_f
 from aiogram.types import Message, BufferedInputFile, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from models.driver import Driver
 from services.parking_service import ParkingService
 from utils.map_generator import generate_parking_map
 
 router = Router()
 
 
-@router.message(Command("map"), flags={"long_operation": "upload_photo", "check_driver": True})
-async def map_command(message: Message, session, driver):
+@router.message(F.text.regexp(r"^(\d+)$").as_("digits"), flags={"check_driver": True})
+async def any_digits_handler(message: Message, digits: re.Match[str]):
+    await message.answer(str(digits))
+
+
+@router.message(or_f(Command("map"), F.text.regexp(r"(?i)(.*пока.* карт(а|у))|(.*карт(а|у) парковки)")),
+                flags={"long_operation": "upload_photo", "check_driver": True})
+async def map_command(message: Message, session, driver, is_private):
     # Получаем текущий день недели (0 - понедельник, 6 - воскресенье)
     current_day = datetime.today().weekday()
-
-    # # Получаем данные пользователя
-    # driver_service = DriverService(session)
-    # driver = await driver_service.get_by_chat_id(message.from_user.id)
-
-    if not driver or not driver.enabled:
-        await message.answer("Сначала зарегистрируйтесь!")
-        return
 
     # Получаем данные для карты
     parking_service = ParkingService(session)
@@ -33,7 +33,7 @@ async def map_command(message: Message, session, driver):
     img = generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
-        current_user_id=driver.chat_id
+        current_user_id=driver.chat_id if is_private else None
     )
 
     img_buffer = BytesIO()
@@ -43,23 +43,43 @@ async def map_command(message: Message, session, driver):
     # Отправка изображения
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
-        caption=f"Карта парковки на {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        caption=f"Карта парковки на {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+                f"🔴 - зарезервировано\n"
+                f"{'🟡 - зарезервировано Вами\n' if is_private else ''}"
+                f"🟢 - свободно"
     )
-    if message.chat.type == 'private':
-        await spot_selection(message, session, True)
+    if is_private:
+        await spot_selection(message, session, driver, True)
 
 
-@router.callback_query(F.data.startswith("choose-spots"))
-async def handle_spot_selection(callback: CallbackQuery, session):
-    await spot_selection(callback.message, session, False)
+@router.callback_query(F.data.startswith("edit_schedule"), flags={"check_driver": True})
+async def handle_spot_selection(callback: CallbackQuery, session, driver):
+    await spot_selection(callback.message, session, driver, True)
 
 
-async def spot_selection(message: Message, session, is_new: bool):
+@router.callback_query(F.data.startswith("choose-spots"), flags={"check_driver": True})
+async def handle_spot_selection(callback: CallbackQuery, session, driver):
+    await spot_selection(callback.message, session, driver, False)
+
+
+async def spot_selection(message: Message, session, driver: Driver, is_new: bool):
     # Добавляем кнопки выбора мест
     builder = InlineKeyboardBuilder()
     # Получаем данные для карты
     parking_service = ParkingService(session)
-    spots = await parking_service.get_all_spots()
+    spots = driver.parking_spots
+
+    if not spots:
+        builder.button(
+            text=f"Показать очередь",
+            switch_inline_query_current_chat=f"Показать очередь"
+        )
+        await message.answer(
+            f"У вас нет доступных мест для бронирования.\n\n"
+            f"Обратитесь к администратору или используйте команды работы с очередью.",
+            reply_markup=builder.as_markup()
+        )
+        return
 
     for spot in spots:
         builder.button(

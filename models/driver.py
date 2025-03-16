@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 
 from config.database import Base
 from models.parking_spot import parking_spot_driver_association
+from models.queue import Queue
+from models.reservation import Reservation
 
 
 class Driver(Base):
@@ -15,6 +17,9 @@ class Driver(Base):
     description = Column(String)
     enabled = Column(Boolean)
 
-    parking_spots = relationship("ParkingSpot", secondary=parking_spot_driver_association, back_populates="drivers")
+    parking_spots = relationship("ParkingSpot",
+                                 secondary=parking_spot_driver_association,
+                                 back_populates="drivers")
 
-    reservations = relationship("Reservation", back_populates="driver")
+    reservations = relationship(Reservation, back_populates="driver")
+    queue = relationship(Queue, back_populates="driver")

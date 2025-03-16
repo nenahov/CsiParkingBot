@@ -1,42 +1,26 @@
-from typing import Optional, List
+from typing import List
 
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from models.driver import Driver
+from models.queue import Queue
 
 
-class DriverDAO:
+class QueueDAO:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, chat_id: int, username: Optional[str] = None, title: Optional[str] = None,
-                     desc: Optional[str] = None,
-                     enabled: bool = False, ) -> Driver:
+    async def create(self, driver: Driver, spot_id: int) -> Queue:
         """Создание нового водителя"""
-        driver = Driver(chat_id=chat_id, username=username, title=title, description=desc, enabled=enabled)
-        self.session.add(driver)
+        queue = Queue(driver=driver, spot_id=spot_id, driver_id=driver.id)
+        self.session.add(queue)
         await self.session.commit()
-        return driver
+        return queue
 
-    async def get_by_id(self, driver_id: int) -> Optional[Driver]:
-        """Получение водителя по ID"""
-        result = await self.session.execute(
-            select(Driver).where(Driver.id == driver_id)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_by_chat_id(self, chat_id: int) -> Optional[Driver]:
-        """Получение водителя по chat_id"""
-        result = await self.session.execute(
-            select(Driver).options(selectinload(Driver.parking_spots)).where(Driver.chat_id == chat_id)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_all(self) -> List[Driver]:
+    async def get_all(self) -> List[Queue]:
         """Получение всех водителей"""
-        result = await self.session.execute(select(Driver))
+        result = await self.session.execute(select(Queue))
         return result.scalars().all()
 
     async def update_username(self, driver_id: int, new_username: str) -> Driver:

@@ -13,7 +13,7 @@ parking_spot_driver_association = Table(
 
 class ParkingSpot(Base):
     __tablename__ = 'parkingspots'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=False)
     x = Column(Integer)
     y = Column(Integer)
     width = Column(Integer)

@@ -4,7 +4,7 @@ import os
 from aiogram import Bot, Dispatcher
 
 from config.database import create_database, db_pool
-from handlers import main_handlers, reservation_handlers, map_handlers
+from handlers import main_handlers, reservation_handlers, map_handlers, user_handlers, queue_handlers
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
 from middlewares.long_operation import LongOperationMiddleware
@@ -30,6 +30,8 @@ async def main():
     dp.callback_query.middleware(DriverCheckMiddleware())
     # dp.callback_query.middleware(CheckActiveGameMiddleware())
 
+    dp.include_router(queue_handlers.router)
+    dp.include_router(user_handlers.router)
     dp.include_router(map_handlers.router)
     dp.include_router(reservation_handlers.router)
     dp.include_router(main_handlers.router)
