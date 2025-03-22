@@ -1,6 +1,9 @@
-from sqlalchemy import select, delete
+from datetime import date
+
+from sqlalchemy import select, delete, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.driver import Driver
 from models.reservation import Reservation
 
 
@@ -14,7 +17,7 @@ class ReservationDAO:
         await self.session.commit()
         return reservation
 
-    async def get_by_spot_and_day(self, spot_id: int, day: int):
+    async def get_by_spot_and_day_of_week(self, spot_id: int, day: int):
         result = await self.session.execute(
             select(Reservation).where(
                 Reservation.parking_spot_id == spot_id,
@@ -22,6 +25,21 @@ class ReservationDAO:
             )
         )
         return result.scalars().all()
+
+    async def get_by_day(self, day: date):
+        day_of_week = day.weekday()
+
+        stmt = (
+            select(Reservation)
+            .join(Driver)
+            .where(and_(Reservation.day_of_week == day_of_week,
+                        Driver.enabled == True,
+                        or_(Driver.absent_until == None, Driver.absent_until <= day)
+                        )
+                   )
+        )
+        results = await self.session.execute(stmt)
+        return results.scalars().all()
 
     async def get_by_params(self, filters: dict):
         query = select(Reservation).where(*[

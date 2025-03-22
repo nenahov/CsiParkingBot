@@ -1,6 +1,6 @@
-from typing import List
+from typing import Sequence
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
@@ -18,29 +18,33 @@ class QueueDAO:
         await self.session.commit()
         return queue
 
-    async def get_all(self) -> List[Queue]:
+    async def add_to_queue(self, driver: Driver, spot_id: int) -> Queue:
+        last_position = await self.get_last_position()
+        new_entry = Queue(
+            driver=driver,
+            spot_id=spot_id,
+            driver_id=driver.id,
+            position=last_position + 1 if last_position else 1
+        )
+        self.session.add(new_entry)
+        await self.session.commit()
+        return new_entry
+
+    async def get_last_position(self) -> int | None:
+        result = await self.session.execute(select(Queue.position).order_by(Queue.position.desc()).limit(1))
+        return result.scalar_one_or_none()
+
+    async def get_all(self) -> Sequence[Queue]:
         """Получение всех водителей"""
-        result = await self.session.execute(select(Queue))
+        result = await self.session.execute(select(Queue).order_by(Queue.position, Queue.created))
         return result.scalars().all()
 
-    async def update_username(self, driver_id: int, new_username: str) -> Driver:
-        """Обновление username водителя"""
-        await self.session.execute(
-            update(Driver)
-            .where(Driver.id == driver_id)
-            .values(username=new_username)
-        )
-        await self.session.commit()
-        return await self.get_by_id(driver_id)
+    async def get_queue_by_driver(self, driver: Driver) -> Queue:
+        result = await self.session.execute(select(Queue).where(Queue.driver_id == driver.id))
+        return result.scalar_one_or_none()
 
-    async def delete(self, driver_id: int) -> None:
-        """Удаление водителя"""
-        await self.session.execute(
-            delete(Driver).where(Driver.id == driver_id))
-        await self.session.commit()
+    async def del_by_driver(self, driver: Driver):
+        await self.session.execute(delete(Queue).where(Queue.driver_id == driver.id))
 
-    async def driver_exists(self, chat_id: int) -> bool:
-        """Проверка существования водителя"""
-        result = await self.session.execute(
-            select(Driver.id).where(Driver.chat_id == chat_id))
-        return result.scalar() is not None
+    async def del_all(self):
+        await self.session.execute(delete(Queue))

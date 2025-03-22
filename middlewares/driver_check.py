@@ -18,7 +18,7 @@ class DriverCheckMiddleware(BaseMiddleware):
             data: Dict[str, Any],
     ) -> Any:
         """
-        Check whether game is active. This middleware is intended for CallbackQuery only!
+
         """
         need_check_handler = get_flag(data, "check_driver")
         if not need_check_handler:

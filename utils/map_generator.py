@@ -1,15 +1,27 @@
 from PIL import Image, ImageDraw, ImageFont
 
+from models.driver import Driver
+from models.parking_spot import ParkingSpot, SpotStatus
+
 # Цвета для разных статусов
 COLORS = {
-    'free': (100, 255, 100, 150),  # Светло-зеленый
-    'my_reserved': (255, 250, 0, 97),  # Оранжевый
+    'free_r': (100, 255, 100, 150),  # Светло-зеленый
+    'my_reserved': (255, 250, 0, 150),  # Желтый
     'reserved': (255, 20, 20, 97),  # Красный
+
+    str(SpotStatus.FREE): (100, 255, 100, 200),  # Светло-зеленый
+    str(SpotStatus.OCCUPIED): (255, 20, 20, 200),  # Красный
+    str(SpotStatus.OCCUPIED_WITHOUT_DEMAND): (255, 20, 20, 250),  # Красный
+
+    str(SpotStatus.FREE) + "_me": (100, 255, 100, 250),  # Светло-зеленый
+    str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 250),  # Желтый
+    str(SpotStatus.OCCUPIED_WITHOUT_DEMAND) + "_me": (255, 200, 20, 250),  # Красный
+
     'text': (0, 0, 0)  # Черный
 }
 
-dx = -39
-dy = -18
+dx = -28
+dy = -16
 
 try:
     font = ImageFont.truetype("arial.ttf", 12)
@@ -17,7 +29,7 @@ except:
     font = ImageFont.load_default()
 
 
-def generate_parking_map(parking_spots, reservations_data, current_user_id):
+def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_spot_status: bool = True):
     # img = Image.new('RGB', (800, 600), (255, 255, 255))
     img = Image.open("./pics/parking.png")
 
@@ -31,25 +43,7 @@ def generate_parking_map(parking_spots, reservations_data, current_user_id):
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
-        status = 'free'
-        reserved_by = None
-
-        # Проверка резерваций для текущего места
-        for res in reservations_data.get(spot.id, []):
-            if res.driver.chat_id == current_user_id:
-                status = 'my_reserved'
-                reserved_by = res.driver.username or f"user_{res.driver.chat_id}"
-                break
-            else:
-                status = 'reserved'
-                reserved_by = res.driver.username or f"user_{res.driver.chat_id}"
-
-        # Рисуем прямоугольник
-        # draw.rectangle(
-        #     [(dx + spot.x, dy + spot.y), (dx + spot.x + spot.width, dy + spot.y + spot.height)],
-        #     fill=COLORS[status],
-        #     outline=COLORS[status]
-        # )
+        status = get_status(driver, reservations_data, spot, use_spot_status)
 
         # Создаем паттерн с диагональными полосами
         pattern = create_diagonal_pattern(spot.width, spot.height,
@@ -67,6 +61,21 @@ def generate_parking_map(parking_spots, reservations_data, current_user_id):
     img = Image.alpha_composite(img, overlay)
 
     return img
+
+
+def get_status(driver: Driver, reservations_data, spot: ParkingSpot, use_spot_status: bool):
+    if use_spot_status and spot.status is not None:
+        return str(spot.status) + ("_me" if driver is not None and spot.current_driver_id == driver.id else "")
+
+    # Проверка резерваций для текущего места
+    me = any(res.driver == driver for res in reservations_data.get(spot.id, []))
+    other = any(res.driver != driver for res in reservations_data.get(spot.id, []))
+    if other and not me:
+        return 'reserved'
+    elif me:
+        return 'my_reserved'
+    else:
+        return 'free_r'
 
 
 def create_diagonal_pattern(width, height, stripe_width=10, color1="red", color2="yellow"):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, Date
 from sqlalchemy.orm import relationship
 
 from config.database import Base
@@ -15,6 +15,7 @@ class Driver(Base):
     username = Column(String)
     title = Column(String)
     description = Column(String)
+    absent_until = Column(Date)
     enabled = Column(Boolean)
 
     parking_spots = relationship("ParkingSpot",

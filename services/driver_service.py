@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.driver_dao import DriverDAO
@@ -15,3 +17,6 @@ class DriverService:
 
     async def get_by_chat_id(self, chat_id: int):
         return await self.dao.get_by_chat_id(chat_id)
+
+    async def update_absent_until(self, driver_id: int, absent_until: date):
+        return await self.dao.update_absent_until(driver_id, absent_until)

@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.filters import or_f
 from aiogram.types import Message
@@ -19,10 +20,9 @@ async def somebody_added(message: Message, session):
         # Получаем данные пользователя
         driver = await driver_service.get_by_chat_id(user.id)
 
-        title = f'{user.full_name}'
-        desc = f'{user.full_name}'
-
         if not driver:
+            title = f'{user.full_name}'
+            desc = f'{user.full_name}'
             await driver_service.register_driver(user.id, user.username, title, desc)
 
         if not driver or not driver.enabled:
@@ -51,12 +51,14 @@ async def start_command(message: Message, session):
     if message.chat.type == 'group':
         members_count = await message.bot.get_chat_member_count(message.chat.id)
         print(f"В группе {members_count} участников")
+        chat_info = await message.bot.get_chat(message.chat.id)
+        print(f"{chat_info}")
         # members_list = [member.user.full_name for member in members]
         # await message.answer("\n".join(members_list))
         # await message.answer(f"В группе {members_count} участников")
 
 
-@router.message(or_f(Command("help"), F.text.regexp(r"(?i)(.*доступные команды)|(.*помощь.* бот)")))
+@router.message(or_f(Command("help", "?"), F.text.regexp(r"(?i)(.*доступные команды)|(.*помощь.* бот)")))
 async def help_command(message: Message):
     content = as_list(
         f"Привет, я бот для бронирования парковочных мест!",
@@ -65,6 +67,7 @@ async def help_command(message: Message):
             Bold("Команды для просмотра информации:"),
             as_key_value(Text("ℹ️ ", Code("мой статус")), "показывает информацию о вас и доступные действия"),
             as_key_value(Text("🗺️ ", Code("показать карту парковки")), "показывает карту парковки на текущий момент"),
+            as_key_value(Text("🗺️ ", Code("показать карту на завтра")), "показывает карту парковки на завтра"),
             as_key_value(Text("📝 ", Code("все доступные команды")), "показывает это сообщение 😉"),
             marker="• ", ),
         as_marked_section(
@@ -85,7 +88,20 @@ async def help_command(message: Message):
             as_key_value(Text("✋ ", Code("покинуть очередь"), ' / ', Code("не приеду сегодня")),
                          "удаляете себя из очереди, если находитесь в ней"),
             marker="• ", ),
+        as_marked_section(
+            Bold("Дополнительно:"),
+            as_key_value(Text("✉️ ", Code("написать разработчику <СООБЩЕНИЕ>")),
+                         "отправляет сообщение разработчику бота"),
+            marker="• ", ),
         HashTag("#commands"),
         sep="\n\n",
     )
     await message.answer(**content.as_kwargs())
+
+
+@router.message(F.text.regexp(r"(?i)(.*написать разработчику)|(.*связаться с разработчиком)"))
+async def dev_command(message: Message):
+    await message.reply("Передам разработчику")
+    await message.bot.send_message(chat_id=203121382,
+                                   text=F"Сообщение от [{message.from_user.full_name}](tg://user?id={message.from_user.id}):\n{message.md_text}",
+                                   parse_mode=ParseMode.MARKDOWN_V2)

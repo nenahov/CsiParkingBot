@@ -1,4 +1,5 @@
-from typing import Optional, List
+from datetime import date
+from typing import Optional, Sequence
 
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,7 @@ class DriverDAO:
         )
         return result.scalar_one_or_none()
 
-    async def get_all(self) -> List[Driver]:
+    async def get_all(self) -> Sequence[Driver]:
         """Получение всех водителей"""
         result = await self.session.execute(select(Driver))
         return result.scalars().all()
@@ -45,6 +46,16 @@ class DriverDAO:
             update(Driver)
             .where(Driver.id == driver_id)
             .values(username=new_username)
+        )
+        await self.session.commit()
+        return await self.get_by_id(driver_id)
+
+    async def update_absent_until(self, driver_id: int, absent_until: date) -> Driver:
+        """Обновление absent_until водителя"""
+        await self.session.execute(
+            update(Driver)
+            .where(Driver.id == driver_id)
+            .values(absent_until=absent_until)
         )
         await self.session.commit()
         return await self.get_by_id(driver_id)
