@@ -7,12 +7,22 @@ from aiogram.filters import Command
 from aiogram.filters import or_f
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
+from services.param_service import ParamService
 
 router = Router()
 games = {}
-hi_score = 0
+hi_score = -1
+
+
+async def get_hi_score(session):
+    global hi_score
+    if hi_score < 0:
+        param_service = ParamService(session)
+        hi_score = int(await param_service.get_parameter("hi_score", "0"))
+    return hi_score
 
 
 class GameState:
@@ -55,43 +65,46 @@ class GameState:
             ]
         ]
 
-    async def start_auto_update(self, bot):
+    async def start_auto_update(self, bot, session: AsyncSession):
         """Запуск автоматического обновления"""
         self.bot = bot
-        self.update_task = asyncio.create_task(self.auto_update())
+        self.update_task = asyncio.create_task(self.auto_update(session))
 
-    async def auto_update(self):
+    async def auto_update(self, session: AsyncSession):
         """Автоматическое обновление игры"""
         while self.is_active:
             await asyncio.sleep(2.5)
             self.update()
             if self.is_active:
-                await self.redraw()
+                await self.redraw(session)
             else:
-                await self.game_over()
+                await self.game_over(session)
 
-    async def redraw(self):
+    async def redraw(self, session: AsyncSession):
         """Перерисовка игрового поля"""
         try:
             await self.bot.edit_message_text(
                 chat_id=self.chat_id,
                 message_id=self.message_id,
-                text=self.draw(),
+                text=await self.draw(session),
                 reply_markup=await get_controls()
             )
         except Exception as e:
             logging.error(f"Error redrawing: {e}")
 
-    async def game_over(self):
+    async def game_over(self, session: AsyncSession):
         """Обработка завершения игры"""
         global hi_score
+        hi_score = await get_hi_score(session)
         if self.score > hi_score:
             hi_score = self.score
+            param_service = ParamService(session)
+            await param_service.set_parameter("hi_score", str(hi_score))
         try:
             await self.bot.edit_message_text(
                 chat_id=self.chat_id,
                 message_id=self.message_id,
-                text=f"💥 БУМ! FINAL SCORE: {self.score}\n{self.draw()}"
+                text=f"💥 БУМ! FINAL SCORE: {self.score}\n{await self.draw(session)}"
             )
         except Exception as e:
             logging.error(f"Error in game over: {e}")
@@ -160,7 +173,7 @@ class GameState:
                 player_rect[1] + self.car_height <= enemy_rect[1]
         )
 
-    def draw(self):
+    async def draw(self, session: AsyncSession):
         buffer = [f"🏁 За рулем {self.player_name}\n"]
 
         # buffer.append(f"🏁 SCORE: {self.score:06d} 🏁\n🏁 HI: {hi_score:06d} 🏆\n")
@@ -176,7 +189,8 @@ class GameState:
             if line_num == 5:
                 add = "  HI-SCORE"
             if line_num == 6:
-                add = f"    {hi_score:06d}"
+                hi_score = await get_hi_score(session)
+                add = f"    {hi_score :06d}"
             line = list(self.border + '▢' * self.road_width + self.border + add) if bi % 3 != 0 else list(
                 '▢' * (self.road_width + 2) + add)
 
@@ -204,8 +218,7 @@ class GameState:
 
 @router.message(or_f(Command("tetris"), F.text.regexp(r"(?i)(.*тетрис)")),
                 flags={"check_driver": True})
-async def start_game(message: types.Message, driver: Driver):
-    global hi_score
+async def start_game(message: types.Message, driver: Driver, session: AsyncSession):
     game_id = message.chat.id
 
     # Удаляем предыдущую игру если существует
@@ -218,7 +231,7 @@ async def start_game(message: types.Message, driver: Driver):
     game = GameState(message.chat.id, msg.message_id)
     game.player_name = driver.title
     games[game_id] = game
-    await game.start_auto_update(message.bot)
+    await game.start_auto_update(message.bot, session)
 
 
 @router.callback_query(lambda c: c.data in ['game_left', 'game_right'], flags={"check_driver": True})

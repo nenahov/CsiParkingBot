@@ -89,6 +89,7 @@ async def map_command(message: Message, session, driver, is_private):
 @router.callback_query(F.data.startswith("edit_schedule"), flags={"check_driver": True})
 async def handle_spot_selection(callback: CallbackQuery, session, driver):
     await spot_selection(callback.message, session, driver, True)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("choose-spots"), flags={"check_driver": True})

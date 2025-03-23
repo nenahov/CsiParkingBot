@@ -10,12 +10,12 @@ from models.reservation import Reservation
 class Driver(Base):
     __tablename__ = 'drivers'
 
-    id = Column(Integer, primary_key=True)
-    chat_id = Column(Integer, unique=True)
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(Integer, unique=True, index=True)
     username = Column(String)
     title = Column(String)
     description = Column(String)
-    absent_until = Column(Date)
+    absent_until = Column(Date, index=True)
     enabled = Column(Boolean)
 
     parking_spots = relationship("ParkingSpot",

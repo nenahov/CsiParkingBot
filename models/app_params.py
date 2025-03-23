@@ -10,6 +10,6 @@ class AppParam(Base):
     __table_args__ = (UniqueConstraint('key', name='unique_key'),)
 
     id = Column(Integer, primary_key=True)
-    key = Column(String(255), nullable=False)
+    key = Column(String(255), nullable=False, index=True)
     value = Column(Text, nullable=False)
     description = Column(Text)

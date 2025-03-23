@@ -32,8 +32,8 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, i
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit_schedule'))
         builder.add(InlineKeyboardButton(text="👤 Профиль", callback_data='edit_profile'))
-        builder.add(InlineKeyboardButton(text="📝 Помощь", switch_inline_query_current_chat='все доступные команды'))
-    builder.adjust(2)
+        builder.add(InlineKeyboardButton(text="📝 Помощь", switch_inline_query_current_chat='Все доступные команды'))
+    builder.adjust(1, 2, 1, 1)
 
     content = Text(TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"\n"

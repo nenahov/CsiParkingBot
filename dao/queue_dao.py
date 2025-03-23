@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
@@ -48,3 +48,17 @@ class QueueDAO:
 
     async def del_all(self):
         await self.session.execute(delete(Queue))
+
+    async def get_driver_queue_index(self, driver_id):
+        stmt = select(Queue).where(Queue.driver_id == driver_id)
+        queue_entry = await self.session.scalar(stmt)
+
+        if not queue_entry:
+            return None
+
+        count = await self.session.scalar(
+            select(func.count(Queue.id))
+            .where(Queue.position < queue_entry.position)
+        )
+
+        return count + 1 if count is not None else None

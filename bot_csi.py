@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 
 from config.database import create_database, db_pool
 from handlers import main_handlers, reservation_handlers, map_handlers, user_handlers, queue_handlers, admin_handlers, \
-    game_handlers
+    game_handlers, commands_handlers
 from middlewares.admin_check import AdminCheckMiddleware
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
@@ -42,6 +42,7 @@ async def main():
     dp.include_router(reservation_handlers.router)
     dp.include_router(admin_handlers.router)
     dp.include_router(main_handlers.router)
+    dp.include_router(commands_handlers.router)
     dp.include_router(game_handlers.router)
 
     await dp.start_polling(bot)
