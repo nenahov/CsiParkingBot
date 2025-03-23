@@ -1,3 +1,4 @@
+import datetime
 from typing import Sequence
 
 from sqlalchemy import select, delete, func
@@ -18,11 +19,11 @@ class QueueDAO:
         await self.session.commit()
         return queue
 
-    async def add_to_queue(self, driver: Driver, spot_id: int) -> Queue:
+    async def add_to_queue(self, driver: Driver) -> Queue:
         last_position = await self.get_last_position()
         new_entry = Queue(
+            created=datetime.datetime.now(),
             driver=driver,
-            spot_id=spot_id,
             driver_id=driver.id,
             position=last_position + 1 if last_position else 1
         )
@@ -49,8 +50,8 @@ class QueueDAO:
     async def del_all(self):
         await self.session.execute(delete(Queue))
 
-    async def get_driver_queue_index(self, driver_id):
-        stmt = select(Queue).where(Queue.driver_id == driver_id)
+    async def get_driver_queue_index(self, driver: Driver) -> int | None:
+        stmt = select(Queue).where(Queue.driver_id == driver.id)
         queue_entry = await self.session.scalar(stmt)
 
         if not queue_entry:

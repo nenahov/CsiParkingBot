@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
 from services.driver_service import DriverService
+from services.queue_service import QueueService
 
 router = Router()
 
@@ -20,14 +21,24 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, i
     today = datetime.today().date()
     is_absent = (driver.absent_until is not None) and (driver.absent_until > today)
 
+    queue_service = QueueService(session)
+    queue_index = await queue_service.get_driver_queue_index(driver)
+
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="Покинуть очередь", switch_inline_query_current_chat='Покинуть очередь'))
-    builder.add(InlineKeyboardButton(text="Приеду", switch_inline_query_current_chat='Приеду сегодня'))
-    if is_absent:
-        builder.add(InlineKeyboardButton(text="Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+
+    if queue_index is not None:
+        builder.add(
+            InlineKeyboardButton(text="✋ Покинуть очередь", switch_inline_query_current_chat='Покинуть очередь'))
     else:
         builder.add(
-            InlineKeyboardButton(text="Не приеду сегодня", switch_inline_query_current_chat='Не приеду сегодня'))
+            InlineKeyboardButton(text="🙋 Встать в очередь", switch_inline_query_current_chat='Встать в очередь'))
+
+    builder.add(InlineKeyboardButton(text="🚗 Приеду", switch_inline_query_current_chat='Приеду сегодня'))
+    if is_absent:
+        builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+    else:
+        builder.add(
+            InlineKeyboardButton(text="🫶 Не приеду сегодня", switch_inline_query_current_chat='Не приеду сегодня'))
 
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit_schedule'))
@@ -39,12 +50,17 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, i
                    f"\n"
                    f"{driver.description}\n"
                    f"\n",
-                   Bold("Закрепленные места: "),
-                   f"{sorted([p.id for p in driver.parking_spots])}\n",
+
+                   Bold("Закрепленные места: "), f"{sorted([p.id for p in driver.parking_spots])}\n",
+
+                   Bold("Место в очереди: ") if queue_index else '',
+                   (str(queue_index) + '\n') if queue_index else '',
+
                    Bold("Приеду не раньше: ") if is_absent else '',
-                   (driver.absent_until.strftime('%d.%m.%Y') + '\n') if is_absent else ''
-                                                                                       f"\n_в разработке_"
-                                                                                       f"\n")
+                   (driver.absent_until.strftime('%d.%m.%Y') + '\n') if is_absent else '',
+
+                   f"\n_в разработке_",
+                   f"\n")
     await message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
