@@ -3,13 +3,14 @@ from datetime import datetime, timedelta
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
-from aiogram.types import Message, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.formatting import Text, TextLink, Bold
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
 from services.driver_service import DriverService
+from services.parking_service import ParkingService
 from services.queue_service import QueueService
 
 router = Router()
@@ -35,10 +36,10 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, i
 
     builder.add(InlineKeyboardButton(text="🚗 Приеду", switch_inline_query_current_chat='Приеду сегодня'))
     if is_absent:
-        builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+        builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", callback_data="absent_" + str(driver.chat_id)))
     else:
         builder.add(
-            InlineKeyboardButton(text="🫶 Не приеду сегодня", switch_inline_query_current_chat='Не приеду сегодня'))
+            InlineKeyboardButton(text="🫶 Не приеду сегодня", callback_data="absent_" + str(driver.chat_id)))
 
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit_schedule'))
@@ -75,11 +76,43 @@ async def absent(message: Message, session: AsyncSession, driver: Driver, is_pri
     else:  # Сработало "не приеду сегодня"
         days = 1
 
-    # прибавим к сегодня 3 дня и покажем дату
+    await absent_x_days(days, driver, message, session)
+
+
+@router.message(
+    F.text.regexp(r"(?i).*((уехал.*на|меня не будет|буду отсутствовать) (\d+) (день|дня|дней))").as_("match"),
+    flags={"check_driver": True})
+async def absent(message: Message, session: AsyncSession, driver: Driver, is_private, match: re.Match):
+    days = int(match.group(3))  # Извлекаем количество дней
+    await absent_x_days(days, driver, message, session)
+
+
+@router.message(F.text.regexp(r"(?i).*((не приеду сегодня)|(уже уехал))"), flags={"check_driver": True})
+async def absent(message: Message, session: AsyncSession, driver: Driver):
+    await absent_x_days(1, driver, message, session)
+
+
+@router.message(F.text.regexp(r"(?i).*(не приеду завтра)"), flags={"check_driver": True})
+async def absent(message: Message, session: AsyncSession, driver: Driver):
+    await absent_x_days(2, driver, message, session)
+
+
+@router.callback_query(F.data.startswith("absent_"), flags={"check_driver": True, "check_callback": True})
+async def absent_callback(callback: CallbackQuery, session, driver):
+    await absent_x_days(1, driver, callback, session)
+
+
+async def absent_x_days(days, driver, event, session):
+    # прибавим к сегодня N дней и покажем дату
     today = datetime.today()
     date = today + timedelta(days=days)
     await DriverService(session).update_absent_until(driver.id, date)
-    await message.reply(f"Вы уехали до {date.strftime('%d.%m.%Y')}")
+    await ParkingService(session).leave_spot(driver)
+    await QueueService(session).leave_queue(driver)
+    if isinstance(event, CallbackQuery):
+        await event.answer(f"Вы уехали до {date.strftime('%d.%m.%Y')}", show_alert=True)
+    else:
+        await event.reply(f"Вы уехали до {date.strftime('%d.%m.%Y')}")
 
 
 @router.message(F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))"),
@@ -89,3 +122,9 @@ async def comeback(message: Message, session: AsyncSession, driver: Driver, is_p
     if (driver.absent_until is not None) and (driver.absent_until > today):
         await DriverService(session).update_absent_until(driver.id, today)
         await message.reply(f"Ваше резервирование восстановлено")
+
+    # TODO меню для занятия места
+    # Определяем список парковок, которые числятся за водителем
+    # Также определяем список уже занятых мест этим водителем
+    # Также определяем список свободных парковок
+    # И количество людей впереди в очереди (если он не в очереди, то длина очереди)

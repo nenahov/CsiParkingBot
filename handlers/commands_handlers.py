@@ -119,6 +119,7 @@ async def other_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
                                      switch_inline_query_current_chat='Написать разработчику <СООБЩЕНИЕ>'))
     builder.add(InlineKeyboardButton(text="🏁 Поиграть в тетрис 🏎️", switch_inline_query_current_chat='Тетрис'))
+    builder.add(InlineKeyboardButton(text="🔒 В разработке", callback_data=f"restrict_commands"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
@@ -133,3 +134,8 @@ async def get_content_text(commands):
         sep="\n\n",
     )
     return content
+
+
+@router.callback_query(F.data.startswith("restrict_commands"), flags={"check_callback": True})
+async def restrict_commands(callback: CallbackQuery):
+    pass

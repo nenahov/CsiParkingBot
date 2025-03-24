@@ -18,7 +18,7 @@ class DriverCheckMiddleware(BaseMiddleware):
             data: Dict[str, Any],
     ) -> Any:
         """
-
+        Проверяет, зарегистрирован ли водитель в системе
         """
         need_check_handler = get_flag(data, "check_driver")
         if not need_check_handler:
@@ -35,6 +35,6 @@ class DriverCheckMiddleware(BaseMiddleware):
             )
             return
         data["driver"] = driver
-        data["is_private"] = event.chat.type == 'private' if not isinstance(event,
-                                                                            CallbackQuery) else event.message.chat.type == 'private'
+        data["is_private"] = event.chat.type == 'private' if not isinstance(event, CallbackQuery) \
+            else event.message.chat.type == 'private'
         return await handler(event, data)

@@ -12,7 +12,7 @@ router = Router()
 async def queue_command(message: Message, session, driver, is_private):
     queue_service = QueueService(session)
     queue_all = await queue_service.get_all()
-    await message.answer(
+    await message.reply(
         f"Текущее состояние очереди\n\n"
         f"Всего в очереди: {len(queue_all)} человек\n\n"
         # Список позиций и водителей в очереди
@@ -25,10 +25,10 @@ async def leave_queue(message: Message, session, driver, is_private):
     queue_service = QueueService(session)
     queue_index = await queue_service.get_driver_queue_index(driver)
     if queue_index is None:
-        await message.answer(f"Вы не в очереди")
+        await message.reply(f"Вы не в очереди")
         return
     await queue_service.leave_queue(driver)
-    await message.answer(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди")
+    await message.reply(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди")
 
 
 @router.message(F.text.regexp(r"(?i)(.*встать в очередь)|(.*свободное мест)"), flags={"check_driver": True})
@@ -36,8 +36,8 @@ async def join_queue(message: Message, session, driver, is_private):
     queue_service = QueueService(session)
     queue_index = await queue_service.get_driver_queue_index(driver)
     if queue_index is not None:
-        await message.answer(f"Вы уже в очереди на {queue_index} месте")
+        await message.reply(f"Вы уже в очереди на {queue_index} месте")
         return
     await queue_service.join_queue(driver)
     queue_index = await queue_service.get_driver_queue_index(driver)
-    await message.answer(f"Вы встали в очередь на {queue_index} место")
+    await message.reply(f"Вы встали в очередь на {queue_index} место")

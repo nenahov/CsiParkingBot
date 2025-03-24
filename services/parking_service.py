@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.parking_spot_dao import ParkingSpotDAO
+from models.driver import Driver
 from services.reservation_service import ReservationService
 
 
@@ -27,3 +28,6 @@ class ParkingService:
 
     async def clear_statuses(self):
         await self.dao.clear_statuses()
+
+    async def leave_spot(self, driver: Driver):
+        await self.dao.leave_spot(driver)

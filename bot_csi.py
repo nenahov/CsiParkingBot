@@ -10,6 +10,7 @@ from middlewares.admin_check import AdminCheckMiddleware
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
 from middlewares.long_operation import LongOperationMiddleware
+from middlewares.my_callback_check import MyCallbackCheckMiddleware
 from middlewares.new_day_check import NewDayCheckMiddleware
 
 
@@ -31,6 +32,7 @@ async def main():
     dp.message.middleware(NewDayCheckMiddleware())
     dp.message.middleware(DriverCheckMiddleware())
     dp.message.middleware(AdminCheckMiddleware())
+    dp.callback_query.middleware(MyCallbackCheckMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
     dp.callback_query.middleware(NewDayCheckMiddleware())
     dp.callback_query.middleware(DriverCheckMiddleware())

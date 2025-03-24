@@ -20,7 +20,7 @@ class NewDayCheckMiddleware(BaseMiddleware):
             data: Dict[str, Any],
     ) -> Any:
         """
-
+        Проверяет, наступило ли время обнулить очередь и состояние парковки
         """
         param_service = data.get("param_service")
         if not param_service:

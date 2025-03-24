@@ -18,7 +18,7 @@ class AdminCheckMiddleware(BaseMiddleware):
             data: Dict[str, Any],
     ) -> Any:
         """
-
+        Проверяет права администратора, если метод их требует
         """
         need_check_handler = get_flag(data, "check_admin")
         if not need_check_handler:
