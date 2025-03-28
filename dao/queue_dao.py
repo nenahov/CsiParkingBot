@@ -41,17 +41,17 @@ class QueueDAO:
         return result.scalars().all()
 
     async def get_queue_by_driver(self, driver: Driver) -> Queue:
-        result = await self.session.execute(select(Queue).where(Queue.driver_id == driver.id))
+        result = await self.session.execute(select(Queue).where(Queue.driver_id.is_(driver.id)))
         return result.scalar_one_or_none()
 
     async def del_by_driver(self, driver: Driver):
-        await self.session.execute(delete(Queue).where(Queue.driver_id == driver.id))
+        await self.session.execute(delete(Queue).where(Queue.driver_id.is_(driver.id)))
 
     async def del_all(self):
         await self.session.execute(delete(Queue))
 
     async def get_driver_queue_index(self, driver: Driver) -> int | None:
-        stmt = select(Queue).where(Queue.driver_id == driver.id)
+        stmt = select(Queue).where(Queue.driver_id.is_(driver.id))
         queue_entry = await self.session.scalar(stmt)
 
         if not queue_entry:

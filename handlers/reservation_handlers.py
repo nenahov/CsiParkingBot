@@ -68,7 +68,6 @@ async def handle_cancelation(callback: CallbackQuery, session, driver):
     day = int(day)
 
     reservation_service = ReservationService(session)
-
     await reservation_service.delete_reservation(driver.id, spot_id, day)
     await callback.answer("🗑️ Бронь отменена")
     await handle_day_selection(callback, session, driver)
@@ -89,13 +88,13 @@ async def start_reservation_process(callback: CallbackQuery, session, driver):
 
 async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int) -> InlineKeyboardMarkup:
     """Генератор клавиатуры с днями недели"""
-    days = [
-        ("Пн", 0), ("Вт", 1), ("Ср", 2),
-        ("Чт", 3), ("Пт", 4), ("Сб", 5), ("Вс", 6)
+    week_days = [
+        ("Пн", 0), ("Вт", 1), ("Ср", 2), ("Чт", 3),
+        ("Пт", 4), ("Сб", 5), ("Вс", 6)
     ]
     reservation_service = ReservationService(session)
     builder = InlineKeyboardBuilder()
-    for day_name, day_num in days:
+    for day_name, day_num in week_days:
         reservations = await reservation_service.get_spot_reservations(spot_id, day_num)
         me = any(res.driver_id == driver.id for res in reservations)
         other = any(res.driver_id != driver.id for res in reservations)

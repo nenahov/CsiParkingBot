@@ -9,18 +9,20 @@ class ParkingSpotDAO:
         self.session = session
 
     async def get_all(self):
-        result = await self.session.execute(select(ParkingSpot).order_by(ParkingSpot.id))
+        result = await self.session.execute(
+            select(ParkingSpot).where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).order_by(ParkingSpot.id))
         return result.scalars().all()
 
     async def clear_statuses(self):
         await self.session.execute(update(ParkingSpot).
+                                   where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).
                                    values(status=None,
                                           current_driver_id=None))
         await self.session.commit()
 
     async def leave_spot(self, driver):
         await self.session.execute(update(ParkingSpot).
-                                   where(ParkingSpot.current_driver_id == driver.id).
+                                   where(ParkingSpot.current_driver_id.is_(driver.id)).
                                    values(status=SpotStatus.FREE,
                                           current_driver_id=None))
         await self.session.commit()

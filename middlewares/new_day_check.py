@@ -7,6 +7,7 @@ from aiogram.types import TelegramObject
 from services.param_service import ParamService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
+from services.reservation_service import ReservationService
 
 
 class NewDayCheckMiddleware(BaseMiddleware):
@@ -30,7 +31,8 @@ class NewDayCheckMiddleware(BaseMiddleware):
 
         # Получаем текущий день
         new_day_offset = await param_service.get_parameter("new_day_offset", "4")
-        current_day = (datetime.datetime.now() + datetime.timedelta(hours=int(new_day_offset))).strftime('%d.%m.%Y')
+        new_day = (datetime.datetime.now() + datetime.timedelta(hours=int(new_day_offset))).date()
+        current_day = new_day.strftime('%d.%m.%Y')
 
         old_day = await param_service.get_parameter("current_day")
         if not old_day or old_day != current_day:
@@ -42,6 +44,9 @@ class NewDayCheckMiddleware(BaseMiddleware):
 
             parking_service = ParkingService(data["session"])
             await parking_service.clear_statuses()
+
+            reservation_service = ReservationService(data["session"])
+            await reservation_service.delete_duplicate_reservations(new_day)
 
             # устанавливаем текущий день
             await param_service.set_parameter("current_day", current_day)

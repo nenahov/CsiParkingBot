@@ -16,14 +16,14 @@ class ParamDAO:
 
     async def get_param(self, key: str) -> AppParam | None:
         result = await self.session.execute(
-            select(AppParam).where(AppParam.key == key))
+            select(AppParam).where(AppParam.key.is_(key)))
         return result.scalar_one_or_none()
 
     async def set_param(self, key: str, value: str, description: str = None) -> AppParam:
         # Try to update existing
         stmt = (
             update(AppParam)
-            .where(AppParam.key == key)
+            .where(AppParam.key.is_(key))
             .values(value=value, description=description)
             .returning(AppParam)
         )

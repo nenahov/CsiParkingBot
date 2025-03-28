@@ -24,14 +24,14 @@ class DriverDAO:
     async def get_by_id(self, driver_id: int) -> Optional[Driver]:
         """Получение водителя по ID"""
         result = await self.session.execute(
-            select(Driver).where(Driver.id == driver_id)
+            select(Driver).where(Driver.id.is_(driver_id))
         )
         return result.scalar_one_or_none()
 
     async def get_by_chat_id(self, chat_id: int) -> Optional[Driver]:
         """Получение водителя по chat_id"""
         result = await self.session.execute(
-            select(Driver).options(selectinload(Driver.parking_spots)).where(Driver.chat_id == chat_id)
+            select(Driver).options(selectinload(Driver.parking_spots)).where(Driver.chat_id.is_(chat_id))
         )
         return result.scalar_one_or_none()
 
@@ -44,7 +44,7 @@ class DriverDAO:
         """Обновление username водителя"""
         await self.session.execute(
             update(Driver)
-            .where(Driver.id == driver_id)
+            .where(Driver.id.is_(driver_id))
             .values(username=new_username)
         )
         await self.session.commit()
@@ -54,7 +54,7 @@ class DriverDAO:
         """Обновление absent_until водителя"""
         await self.session.execute(
             update(Driver)
-            .where(Driver.id == driver_id)
+            .where(Driver.id.is_(driver_id))
             .values(absent_until=absent_until)
         )
         await self.session.commit()
@@ -63,13 +63,13 @@ class DriverDAO:
     async def delete(self, driver_id: int) -> None:
         """Удаление водителя"""
         await self.session.execute(
-            delete(Driver).where(Driver.id == driver_id))
+            delete(Driver).where(Driver.id.is_(driver_id)))
         await self.session.commit()
 
     async def driver_exists(self, chat_id: int) -> bool:
         """Проверка существования водителя"""
         result = await self.session.execute(
-            select(Driver.id).where(Driver.chat_id == chat_id))
+            select(Driver.id).where(Driver.chat_id.is_(chat_id)))
         return result.scalar() is not None
 
     async def change_attribute(self, driver: Driver, key: str, value: str) -> Driver:

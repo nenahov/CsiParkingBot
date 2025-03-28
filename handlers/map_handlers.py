@@ -8,6 +8,7 @@ from aiogram.types import Message, BufferedInputFile, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from models.driver import Driver
+from models.parking_spot import SpotStatus
 from services.parking_service import ParkingService
 from utils.map_generator import generate_parking_map
 
@@ -101,8 +102,7 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
     # Добавляем кнопки выбора мест
     builder = InlineKeyboardBuilder()
     # Получаем данные для карты
-    parking_service = ParkingService(session)
-    spots = driver.parking_spots
+    spots = [spot for spot in (driver.parking_spots) if spot.status != SpotStatus.HIDEN]
 
     if not spots:
         builder.button(

@@ -9,6 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
+from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
@@ -47,8 +48,8 @@ async def get_status_message(driver, is_private, session):
                    f"\n"
                    f"{driver.description}\n"
                    f"\n",
-
-                   Bold("Закрепленные места: "), f"{sorted([p.id for p in driver.parking_spots])}\n",
+                   Bold("Закрепленные места: "),
+                   f"{sorted([spot.id for spot in driver.parking_spots if spot.status != SpotStatus.HIDEN])}\n",
 
                    Bold("Место в очереди: ") if queue_index else '',
                    (str(queue_index) + '\n') if queue_index else '',
@@ -132,7 +133,7 @@ async def comeback_driver(driver, event, session, is_private=False):
 async def ttt(message: Message, session: AsyncSession, driver: Driver, is_private):
     # TODO меню для занятия места
     # Определяем список парковок, которые числятся за водителем
-    my_spots = driver.parking_spots
+    my_spots = [spot for spot in (driver.parking_spots) if spot.status != SpotStatus.HIDEN]
 
     # Также определяем список уже занятых мест этим водителем
 

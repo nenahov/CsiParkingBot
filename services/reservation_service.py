@@ -31,11 +31,11 @@ class ReservationService:
         # Реализация проверки пересечения временных интервалов
         # TODO
 
-    async def get_by_spot_and_day_of_week(self, spot_id, day_of_week: int):
-        return await self.dao.get_by_spot_and_day_of_week(spot_id, day_of_week)
-
     async def get_spot_reservations(self, spot_id: int, day_of_week: int):
         return await self.dao.get_by_spot_and_day_of_week(spot_id, day_of_week)
 
     async def get_by_day(self, day: date):
         return await self.dao.get_by_day(day)
+
+    async def delete_duplicate_reservations(self, target_date: date):
+        await self.dao.delete_duplicate_reservations(target_date)

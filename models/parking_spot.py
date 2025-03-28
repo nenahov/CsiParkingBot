@@ -8,6 +8,7 @@ from config.database import Base
 
 
 class SpotStatus(PyEnum):
+    HIDEN = "hiden"
     FREE = "free"
     OCCUPIED = "occupied"
     OCCUPIED_WITHOUT_DEMAND = "occupied_without_demand"
