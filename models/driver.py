@@ -1,4 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, Date
+from sqlalchemy.dialects.sqlite.json import JSON
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 
 from config.database import Base
@@ -16,6 +18,7 @@ class Driver(Base):
     title = Column(String)
     description = Column(String)
     absent_until = Column(Date, index=True)
+    attributes = Column(MutableDict.as_mutable(JSON), default={})
     enabled = Column(Boolean)
 
     parking_spots = relationship("ParkingSpot",

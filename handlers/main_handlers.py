@@ -1,3 +1,5 @@
+import random
+
 from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -21,9 +23,9 @@ async def somebody_added(message: Message, session):
         if not driver:
             title = f'{user.full_name}'
             desc = f'{user.full_name}'
-            await driver_service.register_driver(user.id, user.username, title, desc)
+            driver = await driver_service.register_driver(user.id, user.username, title, desc)
 
-        if not driver or not driver.enabled:
+        if not driver.enabled:
             await message.answer(
                 f"{user.first_name}, обратитесь к администратору для регистрации в системе.")
 
@@ -40,11 +42,13 @@ async def start_command(message: Message, session):
     desc = f'{message.from_user.full_name}'
 
     if not driver:
-        await driver_service.register_driver(message.from_user.id, message.from_user.username, title, desc)
+        driver = await driver_service.register_driver(message.from_user.id, message.from_user.username, title, desc)
 
     if not driver or not driver.enabled:
         await message.answer(
             f"{message.from_user.first_name}, обратитесь к администратору для регистрации в системе.")
+
+    driver = await driver_service.change_attribute(driver, 'test', str(random.randint(0, 100)))
 
     if message.chat.type == 'group':
         members_count = await message.bot.get_chat_member_count(message.chat.id)

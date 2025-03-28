@@ -20,3 +20,6 @@ class DriverService:
 
     async def update_absent_until(self, driver_id: int, absent_until: date):
         return await self.dao.update_absent_until(driver_id, absent_until)
+
+    async def change_attribute(self, driver: Driver, key: str, value: str) -> Driver:
+        return await self.dao.change_attribute(driver, key, value)

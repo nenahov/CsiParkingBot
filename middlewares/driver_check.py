@@ -35,6 +35,8 @@ class DriverCheckMiddleware(BaseMiddleware):
             )
             return
         data["driver"] = driver
-        data["is_private"] = event.chat.type == 'private' if not isinstance(event, CallbackQuery) \
-            else event.message.chat.type == 'private'
+        is_callback = isinstance(event, CallbackQuery)
+        data["is_callback"] = is_callback
+        data["is_private"] = event.message.chat.type == 'private' if is_callback \
+            else event.chat.type == 'private'
         return await handler(event, data)

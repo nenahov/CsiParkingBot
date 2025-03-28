@@ -71,3 +71,9 @@ class DriverDAO:
         result = await self.session.execute(
             select(Driver.id).where(Driver.chat_id == chat_id))
         return result.scalar() is not None
+
+    async def change_attribute(self, driver: Driver, key: str, value: str) -> Driver:
+        """Изменение атрибута водителя"""
+        driver.attributes[key] = value
+        await self.session.commit()
+        return driver
