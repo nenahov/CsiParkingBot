@@ -32,6 +32,7 @@ class NewDayCheckMiddleware(BaseMiddleware):
         # Получаем текущий день
         new_day_offset = await param_service.get_parameter("new_day_offset", "4")
         new_day = (datetime.datetime.now() + datetime.timedelta(hours=int(new_day_offset))).date()
+        data["current_day"] = new_day
         current_day = new_day.strftime('%d.%m.%Y')
 
         old_day = await param_service.get_parameter("current_day")

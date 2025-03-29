@@ -1,16 +1,18 @@
-from datetime import datetime
+from datetime import timedelta
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.formatting import Text, as_marked_section, Bold, as_key_value, Italic
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from models.driver import Driver
 from services.reservation_service import ReservationService
 
 router = Router()
 
 
 @router.callback_query(F.data.startswith("choose-day_"), flags={"check_driver": True})
-async def handle_day_selection(callback: CallbackQuery, session, driver):
+async def handle_day_selection(callback: CallbackQuery, session, driver: Driver, current_day):
     _, spot_id, day = callback.data.split("_")
     spot_id = int(spot_id)
     day = int(day)
@@ -24,7 +26,7 @@ async def handle_day_selection(callback: CallbackQuery, session, driver):
             text="❌ Освободить место",
             callback_data=f"cancel_{spot_id}_{day}"
         ))
-    else:
+    elif all(res.driver.is_absent(current_day + timedelta(days=1)) for res in reservations):
         builder.add(InlineKeyboardButton(
             text="✅ Забронировать",
             callback_data=f"reserve_{spot_id}_{day}"
@@ -35,15 +37,28 @@ async def handle_day_selection(callback: CallbackQuery, session, driver):
         callback_data=f"select-spot_{spot_id}"
     ))
 
-    await callback.message.edit_text(
-        f"Место {spot_id}, {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][day]}:\n"
-        f"Статус: {len(reservations)} резерваций",
-        reply_markup=builder.as_markup()
-    )
+    drivers_info = Bold("Свободно!") if not reservations else as_marked_section(
+        Bold("Зарезервировано:"),
+        *[as_key_value(f"{res.driver.description}",
+                       f"приедет {res.driver.absent_until.strftime('%d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
+          for
+          res in reservations],
+        marker="• ", )
+
+    content = Text("🅿️ Место ", Bold(f"{spot_id}"), ", ",
+                   Bold(f"{['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][day]}"), ":\n\n",
+                   drivers_info,
+                   "\n\n",
+                   as_key_value(Bold(f"Количество резерваций"), f"{len(reservations)}"),
+                   '' if len(reservations) < 2 else Italic(
+                       "\n\nВ день приезда первого из списка все остальные резервы будут удалены")
+                   )
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup()
+                                     )
 
 
 @router.callback_query(F.data.startswith("reserve_"), flags={"check_driver": True})
-async def handle_reservation(callback: CallbackQuery, session, driver):
+async def handle_reservation(callback: CallbackQuery, session, driver, current_day):
     _, spot_id, day = callback.data.split("_")
     spot_id = int(spot_id)
     day = int(day)
@@ -58,11 +73,11 @@ async def handle_reservation(callback: CallbackQuery, session, driver):
     except ValueError as e:
         await callback.answer(f"❌ Ошибка: {str(e)}")
 
-    await handle_day_selection(callback, session, driver)
+    await handle_day_selection(callback, session, driver, current_day)
 
 
 @router.callback_query(F.data.startswith("cancel_"), flags={"check_driver": True})
-async def handle_cancelation(callback: CallbackQuery, session, driver):
+async def handle_cancel_reservation(callback: CallbackQuery, session, driver, current_day):
     _, spot_id, day = callback.data.split("_")
     spot_id = int(spot_id)
     day = int(day)
@@ -70,18 +85,18 @@ async def handle_cancelation(callback: CallbackQuery, session, driver):
     reservation_service = ReservationService(session)
     await reservation_service.delete_reservation(driver.id, spot_id, day)
     await callback.answer("🗑️ Бронь отменена")
-    await handle_day_selection(callback, session, driver)
+    await handle_day_selection(callback, session, driver, current_day)
 
 
 @router.callback_query(F.data.startswith("select-spot_"), flags={"check_driver": True})
-async def start_reservation_process(callback: CallbackQuery, session, driver):
+async def start_reservation_process(callback: CallbackQuery, session, driver, current_day):
     """Обработчик выбора парковочного места"""
     spot_id = int(callback.data.split("_")[-1])
-    current_day = datetime.today().weekday()  # 0-6 (пн-вс)
+    current_week_day = current_day.weekday()  # 0-6 (пн-вс)
 
     await callback.message.edit_text(
-        text=f"Выбрано место {spot_id}.\n\n🔴 - зарезервировано кем-то,\n🟡 - зарезервировано кем-то и Вами,\n🟢 - зарезервировано только Вами,\n⚪ - свободно.\n\n✔️ - текущий день недели.\n\nВыберите день:",
-        reply_markup=await get_weekdays_keyboard(session, driver, spot_id, current_day),
+        text=f"🅿️ Выбрано место {spot_id}.\n\n🔴 - зарезервировано кем-то,\n🟡 - зарезервировано кем-то и Вами,\n🟢 - зарезервировано только Вами,\n⚪ - свободно.\n\n✔️ - текущий день недели.\n\nВыберите день:",
+        reply_markup=await get_weekdays_keyboard(session, driver, spot_id, current_week_day),
         parse_mode="Markdown"
     )
 

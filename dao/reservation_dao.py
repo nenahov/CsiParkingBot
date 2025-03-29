@@ -19,10 +19,12 @@ class ReservationDAO:
 
     async def get_by_spot_and_day_of_week(self, spot_id: int, day_of_week: int):
         result = await self.session.execute(
-            select(Reservation).where(
+            select(Reservation).
+            where(
                 Reservation.parking_spot_id.is_(spot_id),
                 Reservation.day_of_week.is_(day_of_week)
-            )
+            ).
+            order_by(Reservation.id)
         )
         return result.scalars().all()
 
