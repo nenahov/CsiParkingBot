@@ -8,7 +8,7 @@ logging.basicConfig(
     filemode="a",
     encoding="utf-8",
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s\t%(levelname)s\t%(name)s\t%(message)s",
 )
 
 logger = logging.getLogger(__name__)

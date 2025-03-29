@@ -16,7 +16,7 @@ DATABASE_URL = os.getenv(
 # Создание асинхронного движка
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Логирование SQL-запросов (можно отключить для продакшена)
+    echo=False,  # Логирование SQL-запросов (можно отключить для продакшена)
     future=True
 )
 
