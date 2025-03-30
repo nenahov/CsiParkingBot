@@ -5,6 +5,7 @@ from io import BytesIO
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
 from aiogram.types import Message, BufferedInputFile, CallbackQuery
+from aiogram.utils.formatting import Text, Bold
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from models.driver import Driver
@@ -118,13 +119,18 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
         )
     builder.adjust(3)
 
+    content = Text(
+        "📅 Тут вы можете забронировать парковку по дням недели.\n",
+        "Укажите, по каким дням недели вы приезжаете.",
+        Bold("\n\nВыберите место для бронирования:"))
+
     if is_new:
         await message.answer(
-            "📅 Выберите место для бронирования:",
+            **content.as_kwargs(),
             reply_markup=builder.as_markup()
         )
     else:
         await message.edit_text(
-            "📅 Выберите место для бронирования:",
+            **content.as_kwargs(),
             reply_markup=builder.as_markup()
         )

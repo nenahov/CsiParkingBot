@@ -97,6 +97,5 @@ class ReservationDAO:
             )
         )
 
-        async with self.session.begin():
-            result = await self.session.execute(delete_stmt)
-            return result.rowcount
+        result = await self.session.execute(delete_stmt)
+        return result.rowcount

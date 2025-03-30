@@ -27,6 +27,7 @@ class QueueDAO:
             position=last_position + 1 if last_position else 1
         )
         self.session.add(new_entry)
+        await self.session.commit()
         return new_entry
 
     async def get_last_position(self) -> int | None:

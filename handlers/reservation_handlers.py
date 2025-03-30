@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.formatting import Text, as_marked_section, Bold, as_key_value, Italic
+from aiogram.utils.formatting import Text, as_marked_section, Bold, as_key_value, Italic, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from models.driver import Driver
@@ -22,20 +22,17 @@ async def handle_day_selection(callback: CallbackQuery, session, driver: Driver,
 
     builder = InlineKeyboardBuilder()
     if any(res.driver_id == driver.id for res in reservations):
-        builder.add(InlineKeyboardButton(
-            text="❌ Освободить место",
-            callback_data=f"cancel_{spot_id}_{day}"
-        ))
+        builder.add(InlineKeyboardButton(text="❌ Освободить место", callback_data=f"cancel_{spot_id}_{day}"))
+        builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать N дней",
+                                         switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
     elif all(res.driver.is_absent(current_day + timedelta(days=1)) for res in reservations):
-        builder.add(InlineKeyboardButton(
-            text="✅ Забронировать",
-            callback_data=f"reserve_{spot_id}_{day}"
-        ))
+        builder.add(InlineKeyboardButton(text="✅ Забронировать", callback_data=f"reserve_{spot_id}_{day}"))
 
     builder.add(InlineKeyboardButton(
         text="⬅️ Назад",
         callback_data=f"select-spot_{spot_id}"
     ))
+    builder.adjust(1)
 
     drivers_info = Bold("Свободно!") if not reservations else as_marked_section(
         Bold("Зарезервировано:"),
@@ -50,10 +47,15 @@ async def handle_day_selection(callback: CallbackQuery, session, driver: Driver,
                    "\n\n",
                    as_key_value(Bold(f"Количество резерваций"), f"{len(reservations)}"),
                    '' if len(reservations) < 2 else Italic(
-                       "\n\nВ день приезда первого из списка все остальные резервы будут удалены")
+                       "\n\nВ день приезда первого из списка все остальные резервы будут удалены"),
+                   Text("\n\nЕсли вы уезжаете в отпуск или в командировку, можете не снимать свой резерв, ",
+                        "а воспользоваться командой\n", Code("🏝️ Буду отсутствовать N дней"),
+                        "\nпосле вашего приезда все резервы будут восстановлены автоматически.\n"
+                        "А во время отсутствия ваше место могут забронировать ваши напарники "
+                        "или воспользоваться коллеги, встав в очередь!") if any(
+                       res.driver_id == driver.id for res in reservations) else ""
                    )
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup()
-                                     )
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("reserve_"), flags={"check_driver": True})
@@ -94,7 +96,13 @@ async def start_reservation_process(callback: CallbackQuery, session, driver, cu
     current_week_day = current_day.weekday()  # 0-6 (пн-вс)
 
     await callback.message.edit_text(
-        text=f"🅿️ Выбрано место {spot_id}.\n\n🔴 - зарезервировано кем-то,\n🟡 - зарезервировано кем-то и Вами,\n🟢 - зарезервировано только Вами,\n⚪ - свободно.\n\n✔️ - текущий день недели.\n\nВыберите день:",
+        text=f"🅿️ Выбрано место {spot_id}.\n\n"
+             f"🔴 - зарезервировано кем-то,\n"
+             f"🟡 - зарезервировано кем-то и Вами,\n"
+             f"🟢 - зарезервировано только Вами,\n"
+             f"⚪ - свободно.\n\n"
+             f"✔️ - текущий день недели.\n\n"
+             f"Выберите день недели:",
         reply_markup=await get_weekdays_keyboard(session, driver, spot_id, current_week_day),
         parse_mode="Markdown"
     )
@@ -119,7 +127,7 @@ async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int)
             text=f"{status} {day_name}" if day_num != current_day else f"{status} {day_name} ✔️",
             callback_data=f"choose-day_{spot_id}_{day_num}"
         ))
-    builder.adjust(4)
+    builder.adjust(3)
     builder.add(InlineKeyboardButton(
         text="⬅️ Назад",
         callback_data=f"choose-spots"

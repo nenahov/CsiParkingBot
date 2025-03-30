@@ -28,23 +28,24 @@ async def get_status_message(driver, is_private, session, current_day):
     queue_service = QueueService(session)
     queue_index = await queue_service.get_driver_queue_index(driver)
     builder = InlineKeyboardBuilder()
-    if queue_index is not None:
-        builder.add(
-            InlineKeyboardButton(text="✋ Покинуть очередь", switch_inline_query_current_chat='Покинуть очередь'))
-    else:
-        builder.add(
-            InlineKeyboardButton(text="🙋 Встать в очередь", switch_inline_query_current_chat='Встать в очередь'))
+
     builder.add(InlineKeyboardButton(text="🚗 Приеду", switch_inline_query_current_chat='Приеду сегодня'))
     if is_absent:
         builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", callback_data="comeback_" + str(driver.chat_id)))
     else:
-        builder.add(InlineKeyboardButton(text="🫶 Не приеду сегодня", callback_data="absent_" + str(driver.chat_id)))
+        builder.add(InlineKeyboardButton(text="🫶 Не приеду", callback_data="absent_" + str(driver.chat_id)))
+        if queue_index is not None:
+            builder.add(
+                InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
+        else:
+            builder.add(
+                InlineKeyboardButton(text="🙋 Встать в очередь", callback_data="join-queue_" + str(driver.chat_id)))
     if driver.attributes.setdefault("plus", -1) > -1:
-        builder.add(InlineKeyboardButton(text="🎲 Испытать удачу!",
+        builder.add(InlineKeyboardButton(text="🎰 Розыгрыш кармы!",
                                          callback_data='plus-karma_' + str(driver.chat_id)))
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit-schedule'))
-    builder.adjust(1, 2, 1)
+    builder.adjust(2, 1)
 
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
@@ -57,15 +58,15 @@ async def get_status_message(driver, is_private, session, current_day):
 
     content = Text(TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"\n"
-                   f"{driver.description}\n"
-                   f"\n",
-                   spots_info,
+                   f"{driver.description}"
                    f"\n\n",
                    Bold("Место в очереди: ") if queue_index else '',
-                   (str(queue_index) + '\n') if queue_index else '',
+                   (str(queue_index) + '\n\n') if queue_index else '',
 
                    Bold("Приеду не раньше: ") if is_absent else '',
-                   (driver.absent_until.strftime('%d.%m.%Y') + '\n') if is_absent else '',
+                   (driver.absent_until.strftime('%d.%m.%Y') + '\n\n') if is_absent else '',
+
+                   spots_info,
 
                    f"\n")
     return content, builder
@@ -112,8 +113,7 @@ async def absent_callback(callback: CallbackQuery, session, driver, current_day,
 
 async def absent_x_days(days, driver, event, session, current_day, is_private=False):
     # прибавим к сегодня N дней и покажем дату
-    today = datetime.today()
-    date = (today + timedelta(days=days)).date()
+    date = current_day + timedelta(days=days)
     driver.absent_until = date
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
@@ -165,6 +165,34 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
         driver.attributes["karma"] = driver.attributes.setdefault("karma", 0) + 1
         await callback.answer("💟 Вы получили плюсик в карму.\n\nЗавтра будет шанс получить еще.", show_alert=True)
 
+    content, builder = await get_status_message(driver, is_private, session, current_day)
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("leave-queue_"), flags={"check_driver": True, "check_callback": True})
+async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
+    queue_service = QueueService(session)
+    queue_index = await queue_service.get_driver_queue_index(driver)
+    if queue_index is None:
+        await callback.answer("Вы не в очереди", show_alert=True)
+    else:
+        await queue_service.leave_queue(driver)
+        await  callback.answer(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди", show_alert=True)
+
+    content, builder = await get_status_message(driver, is_private, session, current_day)
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("join-queue_"), flags={"check_driver": True, "check_callback": True})
+async def join_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
+    queue_service = QueueService(session)
+    queue_index = await queue_service.get_driver_queue_index(driver)
+    if queue_index is not None:
+        await callback.answer(f"Вы уже в очереди на {queue_index} месте", show_alert=True)
+    else:
+        await queue_service.join_queue(driver)
+        queue_index = await queue_service.get_driver_queue_index(driver)
+        await callback.answer(f"Вы встали в очередь на {queue_index} место", show_alert=True)
     content, builder = await get_status_message(driver, is_private, session, current_day)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
