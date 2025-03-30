@@ -75,7 +75,7 @@ class ReservationDAO:
                 Driver.id.is_(Reservation.driver_id),
                 or_(
                     Driver.absent_until.is_(None),
-                    Driver.absent_until < target_date
+                    Driver.absent_until <= target_date
                 )
             )
         )
@@ -96,6 +96,7 @@ class ReservationDAO:
                 is_delete_using=True
             )
         )
-
+        await self.session.commit()
         result = await self.session.execute(delete_stmt)
+        await self.session.commit()
         return result.rowcount

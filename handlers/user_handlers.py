@@ -1,3 +1,5 @@
+import asyncio
+import random
 import re
 from datetime import datetime, timedelta
 
@@ -12,6 +14,7 @@ from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
+from services.reservation_service import ReservationService
 
 router = Router()
 
@@ -56,8 +59,7 @@ async def get_status_message(driver, is_private, session, current_day):
           for spot in driver.my_spots()],
         marker="• ", )
 
-    content = Text(TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
-                   f"\n"
+    content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"{driver.description}"
                    f"\n\n",
                    Bold("Место в очереди: ") if queue_index else '',
@@ -68,7 +70,8 @@ async def get_status_message(driver, is_private, session, current_day):
 
                    spots_info,
 
-                   f"\n")
+                   f"\n\n",
+                   as_key_value("Карма", driver.attributes.setdefault("karma", 0)))
     return content, builder
 
 
@@ -141,6 +144,8 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
     today = datetime.today().date()
     if driver.is_absent(today):
         driver.absent_until = today
+        reservation_service = ReservationService(session)
+        await reservation_service.delete_duplicate_reservations(current_day)
         if isinstance(event, CallbackQuery):
             await event.answer(f"Ваше резервирование восстановлено", show_alert=True)
         else:
@@ -157,14 +162,18 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
 async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     if driver.attributes.setdefault("plus", -1) < 0:
         await callback.answer("❎ Вы не можете получить больше кармы.\n\nМожет завтра повезет.", show_alert=True)
-    elif driver.attributes.setdefault("plus", -1) < 10:
-        driver.attributes["plus"] = -1
-        await callback.answer("❎ Вам точно повезет в чем-то другом!\n\nПриходите завтра!", show_alert=True)
     else:
         driver.attributes["plus"] = -1
-        driver.attributes["karma"] = driver.attributes.setdefault("karma", 0) + 1
-        await callback.answer("💟 Вы получили плюсик в карму.\n\nЗавтра будет шанс получить еще.", show_alert=True)
-
+        if not is_private:
+            await callback.bot.send_message(chat_id=driver.chat_id, text="Розыгрыш кармы! /status")
+        data = await callback.bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
+        await session.commit()
+        content, builder = await get_status_message(driver, is_private, session, current_day)
+        await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+        await asyncio.sleep(5 if is_private else 13)
+        driver.attributes["karma"] = driver.attributes.setdefault("karma", 0) + data.dice.value
+        await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
+                              show_alert=True)
     content, builder = await get_status_message(driver, is_private, session, current_day)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
@@ -177,7 +186,7 @@ async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Dr
         await callback.answer("Вы не в очереди", show_alert=True)
     else:
         await queue_service.leave_queue(driver)
-        await  callback.answer(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди", show_alert=True)
+        await callback.answer(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди", show_alert=True)
 
     content, builder = await get_status_message(driver, is_private, session, current_day)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
