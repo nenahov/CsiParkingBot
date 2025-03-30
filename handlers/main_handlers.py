@@ -48,7 +48,7 @@ async def start_command(message: Message, session):
         await message.answer(
             f"{message.from_user.first_name}, обратитесь к администратору для регистрации в системе.")
 
-    driver = await driver_service.change_attribute(driver, 'test', str(random.randint(0, 100)))
+    driver.attributes["test"] = random.randint(0, 100)
 
     if message.chat.type == 'group':
         members_count = await message.bot.get_chat_member_count(message.chat.id)

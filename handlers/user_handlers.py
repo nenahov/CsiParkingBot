@@ -4,12 +4,12 @@ from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
 from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
-from aiogram.utils.formatting import Text, TextLink, Bold, Italic
+from aiogram.utils.formatting import Text, TextLink, Bold, as_marked_section, as_key_value
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
-from services.driver_service import DriverService
+from models.parking_spot import SpotStatus
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 
@@ -39,30 +39,51 @@ async def get_status_message(driver, is_private, session, current_day):
         builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", callback_data="comeback_" + str(driver.chat_id)))
     else:
         builder.add(InlineKeyboardButton(text="🫶 Не приеду сегодня", callback_data="absent_" + str(driver.chat_id)))
+    if driver.attributes.setdefault("plus", -1) > -1:
+        builder.add(InlineKeyboardButton(text="🎲 Испытать удачу!",
+                                         callback_data='plus-karma_' + str(driver.chat_id)))
     if is_private:
-        builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit_schedule'))
+        builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit-schedule'))
     builder.adjust(1, 2, 1)
 
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
 
+    spots_info = as_marked_section(
+        Bold(f"🅿️ Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
+        *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations)}")
+          for spot in driver.my_spots()],
+        marker="• ", )
+
     content = Text(TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"\n"
                    f"{driver.description}\n"
                    f"\n",
-                   Bold("Закрепленные места: "),
-                   f"{sorted([spot.id for spot in driver.my_spots()])}\n",
-
+                   spots_info,
+                   f"\n\n",
                    Bold("Место в очереди: ") if queue_index else '',
                    (str(queue_index) + '\n') if queue_index else '',
 
                    Bold("Приеду не раньше: ") if is_absent else '',
                    (driver.absent_until.strftime('%d.%m.%Y') + '\n') if is_absent else '',
 
-                   f"\n",
-                   Italic("в разработке...\n"),
                    f"\n")
     return content, builder
+
+
+async def get_spot_info(spot, reservations):
+    if spot.status == SpotStatus.OCCUPIED:
+        return f"Занято (ID пользователя: {spot.occupied_by})"
+    elif spot.status == SpotStatus.OCCUPIED_WITHOUT_DEMAND:
+        return f"ЗАНЯТО (ID пользователя: {spot.reserved_by})"
+    elif spot.status == SpotStatus.FREE:
+        return 'СВОБОДНО'
+
+    # ищем всех в reservations
+    res_info = reservations.get(spot.id, [])
+    if len(res_info) < 1:
+        return 'Свободно'
+    return "Резерв у " + ', '.join(res.driver.title for res in res_info)
 
 
 @router.message(
@@ -93,7 +114,7 @@ async def absent_x_days(days, driver, event, session, current_day, is_private=Fa
     # прибавим к сегодня N дней и покажем дату
     today = datetime.today()
     date = (today + timedelta(days=days)).date()
-    driver = await DriverService(session).update_absent_until(driver.id, date)
+    driver.absent_until = date
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
     if isinstance(event, CallbackQuery):
@@ -119,7 +140,7 @@ async def comeback_callback(callback: CallbackQuery, session: AsyncSession, driv
 async def comeback_driver(driver, event, session, current_day, is_private=False):
     today = datetime.today().date()
     if driver.is_absent(today):
-        driver = await DriverService(session).update_absent_until(driver.id, today)
+        driver.absent_until = today
         if isinstance(event, CallbackQuery):
             await event.answer(f"Ваше резервирование восстановлено", show_alert=True)
         else:
@@ -130,6 +151,22 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
     if isinstance(event, CallbackQuery):
         content, builder = await get_status_message(driver, is_private, session, current_day)
         await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("plus-karma_"), flags={"check_driver": True, "check_callback": True})
+async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
+    if driver.attributes.setdefault("plus", -1) < 0:
+        await callback.answer("❎ Вы не можете получить больше кармы.\n\nМожет завтра повезет.", show_alert=True)
+    elif driver.attributes.setdefault("plus", -1) < 10:
+        driver.attributes["plus"] = -1
+        await callback.answer("❎ Вам точно повезет в чем-то другом!\n\nПриходите завтра!", show_alert=True)
+    else:
+        driver.attributes["plus"] = -1
+        driver.attributes["karma"] = driver.attributes.setdefault("karma", 0) + 1
+        await callback.answer("💟 Вы получили плюсик в карму.\n\nЗавтра будет шанс получить еще.", show_alert=True)
+
+    content, builder = await get_status_message(driver, is_private, session, current_day)
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
 async def ttt(message: Message, session: AsyncSession, driver: Driver, is_private):

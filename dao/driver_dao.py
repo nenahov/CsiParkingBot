@@ -1,7 +1,6 @@
-from datetime import date
 from typing import Optional, Sequence
 
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -40,31 +39,10 @@ class DriverDAO:
         result = await self.session.execute(select(Driver))
         return result.scalars().all()
 
-    async def update_username(self, driver_id: int, new_username: str) -> Driver:
-        """Обновление username водителя"""
-        await self.session.execute(
-            update(Driver)
-            .where(Driver.id.is_(driver_id))
-            .values(username=new_username)
-        )
-        await self.session.commit()
-        return await self.get_by_id(driver_id)
-
-    async def update_absent_until(self, driver_id: int, absent_until: date) -> Driver:
-        """Обновление absent_until водителя"""
-        await self.session.execute(
-            update(Driver)
-            .where(Driver.id.is_(driver_id))
-            .values(absent_until=absent_until)
-        )
-        await self.session.commit()
-        return await self.get_by_id(driver_id)
-
     async def delete(self, driver_id: int) -> None:
         """Удаление водителя"""
         await self.session.execute(
             delete(Driver).where(Driver.id.is_(driver_id)))
-        await self.session.commit()
 
     async def driver_exists(self, chat_id: int) -> bool:
         """Проверка существования водителя"""
@@ -72,8 +50,16 @@ class DriverDAO:
             select(Driver.id).where(Driver.chat_id.is_(chat_id)))
         return result.scalar() is not None
 
-    async def change_attribute(self, driver: Driver, key: str, value: str) -> Driver:
-        """Изменение атрибута водителя"""
-        driver.attributes[key] = value
-        await self.session.commit()
-        return driver
+    async def remove_attribute_for_all(self, key: str) -> None:
+        """Удаление атрибута у всех водителей"""
+        stmt = (
+            update(Driver)
+            .values(
+                attributes=func.json_remove(
+                    Driver.attributes,
+                    f'$.{key}'  # Путь к ключу
+                )
+            )
+        )
+
+        await self.session.execute(stmt)

@@ -28,7 +28,6 @@ class ParamDAO:
             .returning(AppParam)
         )
         result = await self.session.execute(stmt)
-        await self.session.commit()
         param = result.scalar_one_or_none()
 
         # If not exists - create new
@@ -44,6 +43,5 @@ class ParamDAO:
         param = await self.get_param(key)
         if param:
             await self.session.delete(param)
-            await self.session.commit()
             return True
         return False

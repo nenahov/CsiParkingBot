@@ -41,8 +41,7 @@ async def handle_day_selection(callback: CallbackQuery, session, driver: Driver,
         Bold("Зарезервировано:"),
         *[as_key_value(f"{res.driver.description}",
                        f"приедет {res.driver.absent_until.strftime('%d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
-          for
-          res in reservations],
+          for res in reservations],
         marker="• ", )
 
     content = Text("🅿️ Место ", Bold(f"{spot_id}"), ", ",

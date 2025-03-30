@@ -19,8 +19,6 @@ class ReservationService:
             "parking_spot_id": spot_id,
             "day_of_week": day_of_week
         })
-        if deleted > 0:
-            await self.session.commit()
 
     async def check_time_overlap(self, new_reservation: dict):
         existing = await self.dao.get_by_spot_and_day_of_week(

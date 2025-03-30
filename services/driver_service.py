@@ -1,5 +1,3 @@
-from datetime import date
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.driver_dao import DriverDAO
@@ -15,11 +13,11 @@ class DriverService:
             raise ValueError("Driver already exists")
         return await self.dao.create(chat_id, username, title=title, desc=desc, enabled=False)
 
+    async def get_all(self):
+        return await self.dao.get_all()
+
     async def get_by_chat_id(self, chat_id: int):
         return await self.dao.get_by_chat_id(chat_id)
 
-    async def update_absent_until(self, driver_id: int, absent_until: date):
-        return await self.dao.update_absent_until(driver_id, absent_until)
-
-    async def change_attribute(self, driver: Driver, key: str, value: str) -> Driver:
-        return await self.dao.change_attribute(driver, key, value)
+    async def remove_attribute_for_all(self, key: str):
+        await self.dao.remove_attribute_for_all(key)

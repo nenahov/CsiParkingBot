@@ -1,13 +1,18 @@
 import datetime
+import logging
+import random
 from typing import Callable, Awaitable, Dict, Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
+from services.driver_service import DriverService
 from services.param_service import ParamService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
+
+logger = logging.getLogger(__name__)
 
 
 class NewDayCheckMiddleware(BaseMiddleware):
@@ -39,6 +44,8 @@ class NewDayCheckMiddleware(BaseMiddleware):
         if not old_day or old_day != current_day:
             # смена дня
             print(f"Наступил новый день: {current_day}")
+            logger.info(f"Наступил новый день: {current_day}")
+
             # очищаем очереди и состояние парковки
             queue_service = QueueService(data["session"])
             await queue_service.del_all()
@@ -48,6 +55,13 @@ class NewDayCheckMiddleware(BaseMiddleware):
 
             reservation_service = ReservationService(data["session"])
             await reservation_service.delete_duplicate_reservations(new_day)
+
+            driver_service = DriverService(data["session"])
+            # await driver_service.remove_attribute_for_all("test")
+
+            drivers = await driver_service.get_all()
+            for driver in drivers:
+                driver.attributes["plus"] = random.randint(0, 100)
 
             # устанавливаем текущий день
             await param_service.set_parameter("current_day", current_day)

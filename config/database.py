@@ -1,8 +1,10 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import declarative_base
 
 # Загрузка переменных окружения из .env
 load_dotenv()
@@ -24,12 +26,8 @@ engine = create_async_engine(
 Base = declarative_base()
 
 # Фабрика сессий с настройками
-db_pool = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
-)
+db_pool = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
 async def create_database():
     """

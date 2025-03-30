@@ -16,7 +16,6 @@ class QueueDAO:
         """Создание нового водителя"""
         queue = Queue(driver=driver, spot_id=spot_id, driver_id=driver.id)
         self.session.add(queue)
-        await self.session.commit()
         return queue
 
     async def add_to_queue(self, driver: Driver) -> Queue:
@@ -28,7 +27,6 @@ class QueueDAO:
             position=last_position + 1 if last_position else 1
         )
         self.session.add(new_entry)
-        await self.session.commit()
         return new_entry
 
     async def get_last_position(self) -> int | None:

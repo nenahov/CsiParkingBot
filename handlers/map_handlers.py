@@ -82,7 +82,7 @@ async def map_command(message: Message, session, driver, current_day, is_private
         await spot_selection(message, session, driver, True)
 
 
-@router.callback_query(F.data.startswith("edit_schedule"), flags={"check_driver": True})
+@router.callback_query(F.data.startswith("edit-schedule"), flags={"check_driver": True})
 async def handle_spot_selection(callback: CallbackQuery, session, driver):
     await spot_selection(callback.message, session, driver, True)
     await callback.answer()
@@ -111,8 +111,7 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
         )
         return
 
-    spots = spots
-    for spot in sorted(spots, key=lambda s: s.id):
+    for spot in spots:
         builder.button(
             text=f"{spot.id}",
             callback_data=f"select-spot_{spot.id}"

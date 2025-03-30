@@ -6,7 +6,7 @@ from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 
 from config.database import Base
-from models.parking_spot import parking_spot_driver_association, SpotStatus
+from models.parking_spot import parking_spot_driver_association, SpotStatus, ParkingSpot
 from models.queue import Queue
 from models.reservation import Reservation
 
@@ -33,5 +33,5 @@ class Driver(Base):
     def is_absent(self, day: datetime) -> bool:
         return (self.absent_until is not None) and (self.absent_until > day)
 
-    def my_spots(self):
-        return [spot for spot in self.parking_spots if spot.status != SpotStatus.HIDEN]
+    def my_spots(self) -> list[ParkingSpot]:
+        return sorted([spot for spot in self.parking_spots if spot.status != SpotStatus.HIDEN], key=lambda s: s.id)

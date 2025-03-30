@@ -18,11 +18,9 @@ class ParkingSpotDAO:
                                    where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).
                                    values(status=None,
                                           current_driver_id=None))
-        await self.session.commit()
 
     async def leave_spot(self, driver):
         await self.session.execute(update(ParkingSpot).
                                    where(ParkingSpot.current_driver_id.is_(driver.id)).
                                    values(status=SpotStatus.FREE,
                                           current_driver_id=None))
-        await self.session.commit()
