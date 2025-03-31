@@ -84,7 +84,7 @@ async def handle_cancel_reservation(callback: CallbackQuery, session, driver, cu
     day = int(day)
 
     reservation_service = ReservationService(session)
-    await reservation_service.delete_reservation(driver.id, spot_id, day)
+    await reservation_service.delete_reservation(driver.id, day)
     await callback.answer("🗑️ Бронь отменена")
     await handle_day_selection(callback, session, driver, current_day)
 

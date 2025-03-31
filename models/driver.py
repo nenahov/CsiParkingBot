@@ -23,12 +23,13 @@ class Driver(Base):
     attributes = Column(MutableDict.as_mutable(JSON), default={})
     enabled = Column(Boolean)
 
-    parking_spots = relationship("ParkingSpot",
+    parking_spots = relationship(ParkingSpot,
                                  secondary=parking_spot_driver_association,
                                  back_populates="drivers")
 
     reservations = relationship(Reservation, back_populates="driver")
     queue = relationship(Queue, back_populates="driver")
+    current_spots = relationship(ParkingSpot, back_populates="current_driver")
 
     def is_absent(self, day: datetime) -> bool:
         return (self.absent_until is not None) and (self.absent_until > day)

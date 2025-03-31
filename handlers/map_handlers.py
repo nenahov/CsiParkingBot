@@ -5,7 +5,7 @@ from io import BytesIO
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
 from aiogram.types import Message, BufferedInputFile, CallbackQuery
-from aiogram.utils.formatting import Text, Bold
+from aiogram.utils.formatting import Text, Bold, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from models.driver import Driver
@@ -51,6 +51,7 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     )
     if is_private:
         await spot_selection(message, session, driver, True)
+
 
 @router.message(or_f(Command("map"), F.text.regexp(r"(?i)(.*пока.* карт(а|у))|(.*карт(а|у) парковки)")),
                 flags={"long_operation": "upload_photo", "check_driver": True})
@@ -98,6 +99,7 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
     # Добавляем кнопки выбора мест
     builder = InlineKeyboardBuilder()
     # Получаем данные для карты
+    await session.refresh(driver, ["reservations", "parking_spots"])
     spots = driver.my_spots()
 
     if not spots:
@@ -119,10 +121,29 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
         )
     builder.adjust(3)
 
+    reservations = driver.reservations
+
     content = Text(
-        "📅 Тут вы можете забронировать парковку по дням недели.\n",
-        "Укажите, по каким дням недели вы приезжаете.",
-        Bold("\n\nВыберите место для бронирования:"))
+        "📅 Тут вы можете забронировать парковку по дням недели.\n\n",
+        Text(*[
+            elem for day, num in [
+                ("Пн", 0), ("Вт", 1), ("Ср", 2),
+                ("Чт", 3), ("Пт", 4), ("Сб", 5), ("Вс", 6)
+            ]
+            for elem in (
+                Code(
+                    f"{day}\t..\t" + (
+                        ', '.join(f"{res.parking_spot_id}"
+                                  for res in reservations
+                                  if res.day_of_week == num)
+                        if any(res.day_of_week == num for res in reservations)
+                        else "нет бронирования"
+                    )
+                ),
+                "\n"
+            )
+        ]),
+        Bold("\nВыберите место для бронирования:"))
 
     if is_new:
         await message.answer(

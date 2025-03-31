@@ -33,4 +33,5 @@ class ParkingSpot(Base):
     current_driver_id = Column(Integer, ForeignKey('drivers.id'))
 
     drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots")
+    current_driver = relationship("Driver", back_populates="current_spots")
     reservations = relationship("Reservation", back_populates="parking_spot")

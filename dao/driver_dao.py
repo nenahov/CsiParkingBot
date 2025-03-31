@@ -2,7 +2,6 @@ from typing import Optional, Sequence
 
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from models.driver import Driver
 
@@ -30,7 +29,9 @@ class DriverDAO:
     async def get_by_chat_id(self, chat_id: int) -> Optional[Driver]:
         """Получение водителя по chat_id"""
         result = await self.session.execute(
-            select(Driver).options(selectinload(Driver.parking_spots)).where(Driver.chat_id.is_(chat_id))
+            select(Driver)
+            # .options(selectinload(Driver.parking_spots))
+            .where(Driver.chat_id.is_(chat_id))
         )
         return result.scalar_one_or_none()
 

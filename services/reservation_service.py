@@ -9,14 +9,14 @@ class ReservationService:
         self.dao = ReservationDAO(session)
 
     async def create_reservation(self, reservation_data: dict):
-        await self.delete_reservation(reservation_data.get('driver_id'), reservation_data.get('parking_spot_id'),
-                                      reservation_data.get('day_of_week'))
+        # Сначала удалим другие резервы этого водителя на этот день недели
+        await self.delete_reservation(reservation_data.get('driver_id'), reservation_data.get('day_of_week'))
+        # Добавим новый резерв
         return await self.dao.create(reservation_data)
 
-    async def delete_reservation(self, driver_id: int, spot_id: int, day_of_week: int):
+    async def delete_reservation(self, driver_id: int, day_of_week: int):
         deleted = await self.dao.delete_by_params({
             "driver_id": driver_id,
-            "parking_spot_id": spot_id,
             "day_of_week": day_of_week
         })
 

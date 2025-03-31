@@ -27,6 +27,7 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, c
 
 
 async def get_status_message(driver, is_private, session, current_day):
+    await session.refresh(driver, ["reservations", "parking_spots"])
     is_absent = driver.is_absent(current_day)
     queue_service = QueueService(session)
     queue_index = await queue_service.get_driver_queue_index(driver)
@@ -199,6 +200,7 @@ async def join_queue(callback: CallbackQuery, session: AsyncSession, driver: Dri
     if queue_index is not None:
         await callback.answer(f"Вы уже в очереди на {queue_index} месте", show_alert=True)
     else:
+        # TODO Если уже есть место, которое вы занимаете, то никакой очереди? или можно встать?
         await queue_service.join_queue(driver)
         queue_index = await queue_service.get_driver_queue_index(driver)
         await callback.answer(f"Вы встали в очередь на {queue_index} место", show_alert=True)
