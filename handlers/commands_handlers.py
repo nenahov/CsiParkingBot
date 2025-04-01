@@ -68,7 +68,7 @@ async def reservation_commands(callback: CallbackQuery):
             Bold("Команды для бронирования места:"),
             as_key_value(Text("🫶 ", Code("буду отсутствовать N дней")), "освобождает свое парковочное место на N дней"),
             as_key_value(Text("🫶 ", Code("не приеду сегодня")), "то же самое, что и 'буду отсутствовать 1 день'"),
-            as_key_value(Text("👋 ", Code("вернулся раньше")), "возобновляет ваше бронирование парковочного места"),
+            as_key_value(Text("🏎️ ", Code("вернулся раньше")), "возобновляет ваше бронирование парковочного места"),
             as_key_value(Text("🚗 ", Code("приеду сегодня")),
                          "занимаете ранее зарезервированное место или встаете в очередь"),
             marker="• ", ))
@@ -77,7 +77,7 @@ async def reservation_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="🫶 Не приеду сегодня", switch_inline_query_current_chat='Не приеду сегодня'))
     builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать N дней",
                                      switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
-    builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+    builder.add(InlineKeyboardButton(text="🏎️ Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())

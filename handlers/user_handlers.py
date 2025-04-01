@@ -27,36 +27,45 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, c
 
 
 async def get_status_message(driver, is_private, session, current_day):
-    await session.refresh(driver, ["reservations", "parking_spots"])
+    await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
     is_absent = driver.is_absent(current_day)
+    occupied_spots = driver.get_occupied_spots()
     queue_service = QueueService(session)
     queue_index = await queue_service.get_driver_queue_index(driver)
     builder = InlineKeyboardBuilder()
+    parking_service = ParkingService(session)
+    spots, reservations = await parking_service.get_spots_with_reservations(current_day)
 
-    builder.add(InlineKeyboardButton(text="🚗 Приеду", switch_inline_query_current_chat='Приеду сегодня'))
     if is_absent:
-        builder.add(InlineKeyboardButton(text="🚗 Вернулся раньше", callback_data="comeback_" + str(driver.chat_id)))
+        builder.add(InlineKeyboardButton(text="🏎️ Вернулся раньше", callback_data="comeback_" + str(driver.chat_id)))
     else:
-        builder.add(InlineKeyboardButton(text="🫶 Не приеду", callback_data="absent_" + str(driver.chat_id)))
-        if queue_index is not None:
+        if occupied_spots:
+            builder.add(InlineKeyboardButton(text="🫶 Уехал", callback_data="absent_" + str(driver.chat_id)))
+        else:
+            builder.add(InlineKeyboardButton(text="🚗 Приеду", callback_data="book_" + str(driver.chat_id)))
+            builder.add(InlineKeyboardButton(text="🫶 Не приеду", callback_data="absent_" + str(driver.chat_id)))
+        if queue_index:
             builder.add(
                 InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
         else:
+            # TODO встать в очередь можно только через меню, когда хочешь приехать
             builder.add(
                 InlineKeyboardButton(text="🙋 Встать в очередь", callback_data="join-queue_" + str(driver.chat_id)))
-    if driver.attributes.setdefault("plus", -1) > -1:
+
+    if driver.attributes.get("plus", -1) > -1:
         builder.add(InlineKeyboardButton(text="🎰 Розыгрыш кармы!",
                                          callback_data='plus-karma_' + str(driver.chat_id)))
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание", callback_data='edit-schedule'))
-    builder.adjust(2, 1)
 
-    parking_service = ParkingService(session)
-    spots, reservations = await parking_service.get_spots_with_reservations(current_day)
+    if occupied_spots or is_absent:
+        builder.adjust(1)
+    else:
+        builder.adjust(2, 1)
 
     spots_info = as_marked_section(
         Bold(f"🅿️ Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
-        *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations)}")
+        *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations, session)}")
           for spot in driver.my_spots()],
         marker="• ", )
 
@@ -72,17 +81,19 @@ async def get_status_message(driver, is_private, session, current_day):
                    spots_info,
 
                    f"\n\n",
-                   as_key_value("Карма", driver.attributes.setdefault("karma", 0)))
+                   as_key_value("Карма", driver.attributes.get("karma", 0)))
     return content, builder
 
 
-async def get_spot_info(spot, reservations):
+async def get_spot_info(spot, reservations, session):
     if spot.status == SpotStatus.OCCUPIED:
-        return f"Занято (ID пользователя: {spot.occupied_by})"
+        await session.refresh(spot, ["current_driver"])
+        return f"Занято ({spot.current_driver.title})"
     elif spot.status == SpotStatus.OCCUPIED_WITHOUT_DEMAND:
-        return f"ЗАНЯТО (ID пользователя: {spot.reserved_by})"
+        await session.refresh(spot, ["current_driver"])
+        return f"Занято! ({spot.current_driver.title})"
     elif spot.status == SpotStatus.FREE:
-        return 'СВОБОДНО'
+        return 'Уже свободно'
 
     # ищем всех в reservations
     res_info = reservations.get(spot.id, [])
@@ -136,7 +147,8 @@ async def comeback(message: Message, session: AsyncSession, driver: Driver, curr
     await comeback_driver(driver, message, session, current_day, is_private)
 
 
-@router.callback_query(F.data.startswith("comeback_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(or_f(F.data.startswith("comeback_"), F.data.startswith("book_")),
+                       flags={"check_driver": True, "check_callback": True})
 async def comeback_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     await comeback_driver(driver, callback, session, current_day, is_private)
 
@@ -153,6 +165,20 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
             await event.reply(f"Ваше резервирование восстановлено")
 
     # await event.reply(f"В разработке... Будет предложение занять одно из ваших мест, либо встать в очередь.")
+    await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
+    occupied_spots = driver.get_occupied_spots()
+    if occupied_spots:
+        if isinstance(event, CallbackQuery):
+            await event.answer(f"Вы уже занимаете место: {', '.join(str(spot.id) for spot in occupied_spots)}",
+                               show_alert=True)
+        else:
+            await event.reply(f"Вы уже занимаете место: {', '.join(str(spot.id) for spot in occupied_spots)}")
+    else:
+        # TODO сначала ищем в резерве, потом в ваших местах, потом вступаем в очередь
+        if isinstance(event, CallbackQuery):
+            await event.answer(f"Ищем Ваш резерв на сегодня...", show_alert=True)
+        else:
+            await event.reply(f"Ищем Ваш резерв на сегодня...")
 
     if isinstance(event, CallbackQuery):
         content, builder = await get_status_message(driver, is_private, session, current_day)
@@ -161,7 +187,7 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
 
 @router.callback_query(F.data.startswith("plus-karma_"), flags={"check_driver": True, "check_callback": True})
 async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    if driver.attributes.setdefault("plus", -1) < 0:
+    if driver.attributes.get("plus", -1) < 0:
         await callback.answer("❎ Вы не можете получить больше кармы.\n\nМожет завтра повезет.", show_alert=True)
     else:
         driver.attributes["plus"] = -1
@@ -172,7 +198,7 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
         content, builder = await get_status_message(driver, is_private, session, current_day)
         await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
         await asyncio.sleep(5 if is_private else 13)
-        driver.attributes["karma"] = driver.attributes.setdefault("karma", 0) + data.dice.value
+        driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
         await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
                               show_alert=True)
     content, builder = await get_status_message(driver, is_private, session, current_day)
