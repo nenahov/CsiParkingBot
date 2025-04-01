@@ -27,6 +27,7 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, c
 
 
 async def get_status_message(driver, is_private, session, current_day):
+    await session.commit()
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
     is_absent = driver.is_absent(current_day)
     occupied_spots = driver.get_occupied_spots()
