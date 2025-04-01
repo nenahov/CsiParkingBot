@@ -28,10 +28,7 @@ async def handle_day_selection(callback: CallbackQuery, session, driver: Driver,
     elif all(res.driver.is_absent(current_day + timedelta(days=1)) for res in reservations):
         builder.add(InlineKeyboardButton(text="✅ Забронировать", callback_data=f"reserve_{spot_id}_{day}"))
 
-    builder.add(InlineKeyboardButton(
-        text="⬅️ Назад",
-        callback_data=f"select-spot_{spot_id}"
-    ))
+    builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select-spot_{spot_id}"))
     builder.adjust(1)
 
     drivers_info = Bold("Свободно!") if not reservations else as_marked_section(
@@ -128,8 +125,5 @@ async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int)
             callback_data=f"choose-day_{spot_id}_{day_num}"
         ))
     builder.adjust(3)
-    builder.add(InlineKeyboardButton(
-        text="⬅️ Назад",
-        callback_data=f"choose-spots"
-    ))
+    builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"choose-spots"))
     return builder.as_markup()

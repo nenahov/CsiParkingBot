@@ -26,8 +26,7 @@ async def somebody_added(message: Message, session):
             driver = await driver_service.register_driver(user.id, user.username, title, desc)
 
         if not driver.enabled:
-            await message.answer(
-                f"{user.first_name}, обратитесь к администратору для регистрации в системе.")
+            await message.answer(f"{user.first_name}, обратитесь к администратору для регистрации в системе.")
 
 
 @router.message(Command("start"))

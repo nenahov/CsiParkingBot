@@ -30,7 +30,7 @@ class DriverCheckMiddleware(BaseMiddleware):
 
         if not driver or not driver.enabled:
             await event.answer(
-                text="Сначала зарегистрируйтесь или обратитесь к администратору!",
+                text="Сначала зарегистрируйтесь или обратитесь к администратору! /start",
                 show_alert=True
             )
             return

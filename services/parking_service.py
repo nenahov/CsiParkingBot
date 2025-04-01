@@ -31,3 +31,6 @@ class ParkingService:
 
     async def leave_spot(self, driver: Driver):
         await self.dao.leave_spot(driver)
+
+    async def occupy_spot(self, driver, spot_id: int, without_demand=True):
+        await self.dao.occupy_spot(driver, spot_id, without_demand)

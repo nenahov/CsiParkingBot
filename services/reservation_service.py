@@ -36,6 +36,4 @@ class ReservationService:
         return await self.dao.get_by_day(day)
 
     async def delete_duplicate_reservations(self, target_date: date):
-        result = await self.dao.delete_duplicate_reservations(target_date)
-        print(f"{result} дубликатов удалено")
-        return result
+        await self.dao.delete_duplicate_reservations(target_date)
