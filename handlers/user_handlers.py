@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
 from models.parking_spot import SpotStatus
+from services.driver_service import DriverService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
@@ -38,7 +39,7 @@ async def get_status_message(driver, is_private, session, current_day):
     is_absent = driver.is_absent(current_day)
     occupied_spots = driver.get_occupied_spots()
     spots, reservations = await ParkingService(session).get_spots_with_reservations(current_day)
-    queue_index = await QueueService(session).get_driver_queue_index(driver)
+    in_queue = await QueueService(session).is_driver_in_queue(driver)
 
     builder = InlineKeyboardBuilder()
     if is_absent:
@@ -49,13 +50,13 @@ async def get_status_message(driver, is_private, session, current_day):
         else:
             builder.add(InlineKeyboardButton(text="🚗 Приеду...", callback_data="book_" + str(driver.chat_id)))
             builder.add(InlineKeyboardButton(text="🫶 Не приеду", callback_data="absent_" + str(driver.chat_id)))
-        if queue_index:
+        if in_queue:
             builder.add(
                 InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
             # А встать в очередь можно только через меню, когда хочешь приехать
 
     if driver.attributes.get("plus", -1) > -1:
-        builder.add(InlineKeyboardButton(text="🎰 Розыгрыш кармы!",
+        builder.add(InlineKeyboardButton(text="🎲 Розыгрыш кармы!",
                                          callback_data='plus-karma_' + str(driver.chat_id)))
     if is_private:
         builder.add(InlineKeyboardButton(text="📅 Расписание...", callback_data='edit-schedule'))
@@ -67,8 +68,8 @@ async def get_status_message(driver, is_private, session, current_day):
 
     content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"{driver.description}", '\n\n')
-    if queue_index:
-        content += Bold("Место в очереди: ") + str(queue_index) + '\n\n'
+    if in_queue:
+        content += Bold("Вы в очереди") + '\n\n'
 
     if is_absent:
         content += Bold("Приеду не раньше: ") + driver.absent_until.strftime('%d.%m.%Y') + '\n\n'
@@ -205,8 +206,8 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
 
         # потом вступаем в очередь
         if allow_queue:
-            queue_index = await QueueService(session).get_driver_queue_index(driver)
-            if queue_index:
+            in_queue = await QueueService(session).is_driver_in_queue(driver)
+            if in_queue:
                 builder.add(
                     InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
             else:
@@ -224,7 +225,9 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
 @router.callback_query(F.data.startswith("occupy-spot_"), flags={"check_driver": True, "check_callback": True})
 async def occupy_spot_callback(callback: CallbackQuery, session, driver, current_day, is_private):
     await ParkingService(session).occupy_spot(driver, int(callback.data.split("_")[2]))
+    await QueueService(session).leave_queue(driver)
     await show_status_callback(callback, session, driver, current_day, is_private)
+
 
 @router.callback_query(F.data.startswith("plus-karma_"), flags={"check_driver": True, "check_callback": True})
 async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
@@ -244,44 +247,37 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
+@router.message(F.text.regexp(r"(?i)(.*топ карма)"), flags={"check_driver": True})
+async def top_karma(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
+    drivers = await DriverService(session).get_top_karma_drivers(10)
+    content = Text(Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n"))
+    for driver in drivers:
+        content += '\n'
+        content += Bold(f"{driver.attributes.get('karma', 0)}")
+        content += f"\t..\t{driver.title}"
+    await message.reply(**content.as_kwargs())
+
+
 @router.callback_query(F.data.startswith("leave-queue_"), flags={"check_driver": True, "check_callback": True})
 async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     queue_service = QueueService(session)
-    queue_index = await queue_service.get_driver_queue_index(driver)
-    if queue_index is None:
+    in_queue = await queue_service.is_driver_in_queue(driver)
+    if not in_queue:
         await callback.answer("Вы не в очереди", show_alert=True)
     else:
         await queue_service.leave_queue(driver)
-        await callback.answer(f"Вы были в очереди на {queue_index} месте\nТеперь вы не в очереди", show_alert=True)
-
+        await callback.answer(f"Теперь вы не в очереди", show_alert=True)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
 @router.callback_query(F.data.startswith("join-queue_"), flags={"check_driver": True, "check_callback": True})
 async def join_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     queue_service = QueueService(session)
-    queue_index = await queue_service.get_driver_queue_index(driver)
-    if queue_index is not None:
-        await callback.answer(f"Вы уже в очереди на {queue_index} месте", show_alert=True)
+    in_queue = await queue_service.is_driver_in_queue(driver)
+    if in_queue:
+        await callback.answer(f"Вы уже в очереди", show_alert=True)
     else:
         # TODO Если уже есть место, которое вы занимаете, то никакой очереди? или можно встать?
         await queue_service.join_queue(driver)
-        queue_index = await queue_service.get_driver_queue_index(driver)
-        await callback.answer(f"Вы встали в очередь на {queue_index} место", show_alert=True)
+        await callback.answer(f"Вы встали в очередь", show_alert=True)
     await show_status_callback(callback, session, driver, current_day, is_private)
-
-
-async def ttt(message: Message, session: AsyncSession, driver: Driver, is_private):
-    # TODO меню для занятия места
-    # Определяем список парковок, которые числятся за водителем
-    my_spots = driver.my_spots()
-
-    # Также определяем список уже занятых мест этим водителем
-
-    # Также определяем список свободных парковок
-
-    # И количество людей впереди в очереди (если он не в очереди, то длина очереди)
-    queue_service = QueueService(session)
-    all_queue = await queue_service.get_all()
-    queue_index = await queue_service.get_driver_queue_index(driver)
-    queue_before_me = queue_index - 1 if queue_index is not None else len(all_queue)

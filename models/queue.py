@@ -10,8 +10,10 @@ class Queue(Base):
     id = Column(Integer, primary_key=True)
     created = Column(DateTime)
 
-    position = Column(Integer, index=True)
-
     driver_id = Column(Integer, ForeignKey('drivers.id'), index=True)
-
     driver = relationship("Driver", back_populates="queue", lazy="selectin")
+
+    spot_id = Column(Integer, ForeignKey('parkingspots.id'), index=True)
+    spot = relationship("ParkingSpot", lazy="selectin")
+
+    choose_before = Column(DateTime)

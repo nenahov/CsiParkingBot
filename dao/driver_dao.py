@@ -1,6 +1,6 @@
 from typing import Optional, Sequence
 
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, cast, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
@@ -64,3 +64,12 @@ class DriverDAO:
         )
 
         await self.session.execute(stmt)
+
+    async def get_top_karma_drivers(self, limit: int) -> Sequence[Driver]:
+        result = await self.session.execute(
+            select(Driver)
+            .filter(func.json_extract(Driver.attributes, '$.karma').isnot(None))
+            # Извлекаем значение как число и сортируем по убыванию
+            .order_by(cast(func.json_extract(Driver.attributes, '$.karma'), Integer).desc())
+            .limit(limit))
+        return result.scalars().all()

@@ -34,3 +34,6 @@ class ParkingService:
 
     async def occupy_spot(self, driver, spot_id: int, without_demand=True):
         await self.dao.occupy_spot(driver, spot_id, without_demand)
+
+    async def get_free_spots(self, day_of_week: int):
+        return await self.dao.get_free_spots(day_of_week)

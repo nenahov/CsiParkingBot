@@ -21,3 +21,6 @@ class DriverService:
 
     async def remove_attribute_for_all(self, key: str):
         await self.dao.remove_attribute_for_all(key)
+
+    async def get_top_karma_drivers(self, limit: int = 10):
+        return await self.dao.get_top_karma_drivers(limit)

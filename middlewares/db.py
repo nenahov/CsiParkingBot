@@ -16,6 +16,7 @@ class DbSessionMiddleware(BaseMiddleware):
             data: Dict[str, Any],
     ) -> Any:
         async with self.session_pool() as session:
+
             data["session"] = session
             try:
                 result = await handler(event, data)

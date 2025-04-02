@@ -1,7 +1,7 @@
 import datetime
 from typing import Sequence
 
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
@@ -19,24 +19,18 @@ class QueueDAO:
         return queue
 
     async def add_to_queue(self, driver: Driver) -> Queue:
-        last_position = await self.get_last_position()
         new_entry = Queue(
             created=datetime.datetime.now(),
             driver=driver,
             driver_id=driver.id,
-            position=last_position + 1 if last_position else 1
         )
         self.session.add(new_entry)
         await self.session.commit()
         return new_entry
 
-    async def get_last_position(self) -> int | None:
-        result = await self.session.execute(select(Queue.position).order_by(Queue.position.desc()).limit(1))
-        return result.scalar_one_or_none()
-
     async def get_all(self) -> Sequence[Queue]:
         """Получение всех водителей"""
-        result = await self.session.execute(select(Queue).order_by(Queue.position, Queue.created))
+        result = await self.session.execute(select(Queue).order_by(Queue.created))
         return result.scalars().all()
 
     async def get_queue_by_driver(self, driver: Driver) -> Queue:
@@ -49,16 +43,6 @@ class QueueDAO:
     async def del_all(self):
         await self.session.execute(delete(Queue))
 
-    async def get_driver_queue_index(self, driver: Driver) -> int | None:
-        stmt = select(Queue).where(Queue.driver_id.is_(driver.id))
-        queue_entry = await self.session.scalar(stmt)
-
-        if not queue_entry:
-            return None
-
-        count = await self.session.scalar(
-            select(func.count(Queue.id))
-            .where(Queue.position < queue_entry.position)
-        )
-
-        return count + 1 if count is not None else None
+    async def is_driver_in_queue(self, driver: Driver) -> bool:
+        result = await self.session.execute(select(Queue).where(Queue.driver_id.is_(driver.id)))
+        return result.scalar_one_or_none() is not None
