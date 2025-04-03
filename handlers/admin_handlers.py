@@ -1,7 +1,11 @@
-from aiogram import Router
+import re
+
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.driver_service import DriverService
 from services.param_service import ParamService
 
 router = Router()
@@ -32,3 +36,20 @@ async def list_params_handler(message: Message, param_service: ParamService):
     params = await param_service.list_parameters()
     response = "\n".join(f"{k}: {v}" for k, v in params.items()) if params else "Нет параметров"
     await message.answer(response)
+
+
+@router.message(
+    F.text.regexp(r"(?i).*начислить.*(\d+).*карм").as_("match"), flags={"check_admin": True})
+async def absent(message: Message, session: AsyncSession, is_private, match: re.Match):
+    if message.reply_to_message:
+        karma = int(match.group(1))  # Извлекаем количество добавляемой кармы
+        # Получаем id пользователя, на сообщение которого дан ответ
+        replied_user_id = message.reply_to_message.from_user.id
+        driver = await DriverService(session).get_by_chat_id(replied_user_id)
+        if driver:
+            driver.attributes['karma'] = driver.attributes.get('karma', 0) + karma
+            await message.answer(f"{'💖' if karma > 0 else '💔'} {driver.description} получает {karma} кармы.")
+        else:
+            await message.answer("Пользователь не нашелся в базе данных.")
+    else:
+        await message.answer("Пожалуйста, ответьте на сообщение пользователя, кому хотите начислить карму.")
