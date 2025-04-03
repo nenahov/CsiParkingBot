@@ -131,9 +131,16 @@ async def absent(message: Message, session: AsyncSession, driver: Driver, curren
 @router.callback_query(MyCallback.filter(F.action == "absent"),
                        flags={"check_driver": True, "check_callback": True})
 async def absent_callback(callback: CallbackQuery, session, driver, current_day, is_private):
+    await absent_handler(callback, session, driver, current_day, is_private)
+
+
+async def absent_handler(event, session, driver, current_day, is_private):
     is_absent = driver.is_absent(current_day)
     if is_absent:
-        await show_status_callback(callback, session, driver, current_day, is_private)
+        if isinstance(event, CallbackQuery):
+            await show_status_callback(event, session, driver, current_day, is_private)
+        else:
+            await event.reply("Вы уже уехали. /status")
         return
 
     current_week_day = current_day.weekday()  # 0-6 (пн-вс)
@@ -148,7 +155,10 @@ async def absent_callback(callback: CallbackQuery, session, driver, current_day,
                                      switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    if isinstance(event, CallbackQuery):
+        await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    else:
+        await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
 @router.callback_query(MyCallback.filter(F.action == "absent-confirm"),
