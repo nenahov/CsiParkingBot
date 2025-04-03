@@ -63,7 +63,7 @@ class QueueService:
 
         while queue and spots:
             # Выбираем случайного человека из очереди и случайное свободное место
-            q = random.choice(queue)
+            q = random.choices(queue, weights=[max(1, q.driver.attributes.get("karma", 0)) for q in queue], k=1)[0]
             spot = random.choice(spots)
 
             # Обновляем данные для выбранного элемента очереди:
