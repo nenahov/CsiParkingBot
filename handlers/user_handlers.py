@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.formatting import Text, TextLink, Bold, as_marked_section, as_key_value
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,7 +131,31 @@ async def absent(message: Message, session: AsyncSession, driver: Driver, curren
 @router.callback_query(MyCallback.filter(F.action == "absent"),
                        flags={"check_driver": True, "check_callback": True})
 async def absent_callback(callback: CallbackQuery, session, driver, current_day, is_private):
-    await absent_x_days(1, driver, callback, session, current_day, is_private)
+    is_absent = driver.is_absent(current_day)
+    if is_absent:
+        await show_status_callback(callback, session, driver, current_day, is_private)
+        return
+
+    current_week_day = current_day.weekday()  # 0-6 (пн-вс)
+    content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
+                   f"{driver.description}",
+                   '\n\n',
+                   Bold("На сколько хотите уехать?"))
+    builder = InlineKeyboardBuilder()
+    add_button("🫶 На сутки", "absent-confirm", driver.chat_id, builder, day_num=1)
+    add_button("❤️‍🔥 До конца недели", "absent-confirm", driver.chat_id, builder, day_num=7 - current_week_day)
+    builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать N дней",
+                                     switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
+    add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
+    builder.adjust(1)
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+
+
+@router.callback_query(MyCallback.filter(F.action == "absent-confirm"),
+                       flags={"check_driver": True, "check_callback": True})
+async def absent_confirm_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day,
+                                  is_private):
+    await absent_x_days(callback_data.day_num, driver, callback, session, current_day, is_private)
 
 
 async def absent_x_days(days, driver, event, session, current_day, is_private=False):

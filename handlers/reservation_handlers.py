@@ -17,7 +17,7 @@ router = Router()
 async def handle_day_selection(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver,
                                current_day):
     spot_id = callback_data.spot_id
-    day_of_week = callback_data.day_of_week
+    day_of_week = callback_data.day_num
 
     reservation_service = ReservationService(session)
     reservations = await reservation_service.get_spot_reservations(spot_id, day_of_week)
@@ -61,7 +61,7 @@ async def handle_day_selection(callback: CallbackQuery, callback_data: MyCallbac
                        flags={"check_driver": True, "check_callback": True})
 async def handle_reservation(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day):
     spot_id = callback_data.spot_id
-    day_of_week = callback_data.day_of_week
+    day_of_week = callback_data.day_num
     reservation_service = ReservationService(session)
     try:
         await reservation_service.create_reservation({
@@ -79,7 +79,7 @@ async def handle_reservation(callback: CallbackQuery, callback_data: MyCallback,
 @router.callback_query(MyCallback.filter(F.action == "cancel_spot"),
                        flags={"check_driver": True, "check_callback": True})
 async def handle_cancel_reservation(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day):
-    day_of_week = callback_data.day_of_week
+    day_of_week = callback_data.day_num
 
     reservation_service = ReservationService(session)
     await reservation_service.delete_reservation(driver.id, day_of_week)
