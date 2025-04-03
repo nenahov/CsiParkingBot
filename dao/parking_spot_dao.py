@@ -9,6 +9,11 @@ class ParkingSpotDAO:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_by_id(self, spot_id: int) -> ParkingSpot | None:
+        result = await self.session.execute(
+            select(ParkingSpot).where(ParkingSpot.id.is_(spot_id)))
+        return result.scalar_one_or_none()
+
     async def get_all(self):
         result = await self.session.execute(
             select(ParkingSpot).where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).order_by(ParkingSpot.id))

@@ -258,8 +258,18 @@ async def comeback_driver(driver, event, session, current_day):
                        flags={"check_driver": True, "check_callback": True})
 async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day,
                                is_private):
-    await ParkingService(session).occupy_spot(driver, callback_data.spot_id)
-    await QueueService(session).leave_queue(driver)
+    parking_service = ParkingService(session)
+    spot = await parking_service.get_spot_by_id(callback_data.spot_id)
+    await session.refresh(spot, ["current_driver"])
+    queue_service = QueueService(session)
+    if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
+        if queue_service.is_driver_in_queue(driver):
+            await queue_service.leave_queue(driver)
+            await queue_service.join_queue(driver)
+        await callback.answer(f"Место занято: {spot.current_driver.description}", show_alert=True)
+        return
+    await parking_service.occupy_spot(driver, callback_data.spot_id)
+    await queue_service.leave_queue(driver)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 

@@ -37,3 +37,6 @@ class ParkingService:
 
     async def get_free_spots(self, day_of_week: int):
         return await self.dao.get_free_spots(day_of_week)
+
+    async def get_spot_by_id(self, spot_id: int):
+        return await self.dao.get_by_id(spot_id)
