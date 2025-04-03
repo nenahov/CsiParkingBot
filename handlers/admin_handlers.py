@@ -39,7 +39,8 @@ async def list_params_handler(message: Message, param_service: ParamService):
 
 
 @router.message(
-    F.text.regexp(r"(?i).*начислить.*(\d+).*карм").as_("match"), flags={"check_admin": True, "check_driver": True})
+    F.text.regexp(r"(?i).*начислить.* ([+-]?\d+) .*карм").as_("match"),
+    flags={"check_admin": True, "check_driver": True})
 async def absent(message: Message, session: AsyncSession, is_private, match: re.Match):
     if is_private:
         await message.answer("Команда недоступна в личных сообщениях.")
