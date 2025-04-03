@@ -120,7 +120,7 @@ async def absent(message: Message, session: AsyncSession, driver: Driver, curren
 @router.message(
     or_f(Command("free"), F.text.regexp(r"(?i).*((не приеду сегодня)|(уже уехал))")), flags={"check_driver": True})
 async def absent(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
-    await absent_x_days(1, driver, message, session, current_day, is_private)
+    await absent_handler(message, session, driver, current_day, is_private)
 
 
 @router.message(F.text.regexp(r"(?i).*(не приеду завтра)"), flags={"check_driver": True})
