@@ -28,7 +28,7 @@ async def main_commands(message, is_new: bool):
     )
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="ℹ️ Информация", callback_data=f"info_commands"))
-    builder.add(InlineKeyboardButton(text="🫶 Резервирование места", callback_data=f"reservation_commands"))
+    builder.add(InlineKeyboardButton(text="🫶 Бронирование места", callback_data=f"reservation_commands"))
     builder.add(InlineKeyboardButton(text="🙋 Очередь на парковку", callback_data=f"queue_commands"))
     builder.add(InlineKeyboardButton(text="🤖 Другое", callback_data=f"other_commands"))
     builder.adjust(1)
@@ -70,7 +70,7 @@ async def reservation_commands(callback: CallbackQuery):
             as_key_value(Text("🫶 ", Code("не приеду сегодня")), "то же самое, что и 'буду отсутствовать 1 день'"),
             as_key_value(Text("🏎️ ", Code("вернулся раньше")), "возобновляет ваше бронирование парковочного места"),
             as_key_value(Text("🚗 ", Code("приеду сегодня")),
-                         "занимаете ранее зарезервированное место или встаете в очередь"),
+                         "занимаете ранее забронированное место или встаете в очередь"),
             marker="• ", ))
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="🚗 Приеду сегодня", switch_inline_query_current_chat='Приеду сегодня'))

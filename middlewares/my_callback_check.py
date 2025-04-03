@@ -6,6 +6,8 @@ from aiogram import BaseMiddleware
 from aiogram.dispatcher.flags import get_flag
 from aiogram.types import TelegramObject, CallbackQuery
 
+from handlers.driver_callback import MyCallback
+
 logger = logging.getLogger(__name__)
 
 class MyCallbackCheckMiddleware(BaseMiddleware):
@@ -31,8 +33,8 @@ class MyCallbackCheckMiddleware(BaseMiddleware):
 
         # Проверяем первую часть data из колбека и сравниваем ее с id пользователя
         user_id = event.from_user.id
-        callback_data = (event.data + "_").split("_")[1]
-        if str(user_id) != callback_data:
+        callback_user_id = await self.get_callback_user_id(event)
+        if str(user_id) != str(callback_user_id):
             text = await self.get_random_restriction_text()
             await event.answer(text=text, show_alert=True)
             logger.info(
@@ -40,6 +42,15 @@ class MyCallbackCheckMiddleware(BaseMiddleware):
             return
 
         return await handler(event, data)
+
+    async def get_callback_user_id(self, event):
+        try:
+            # Распаковываем данные callback'а, используя DriverCallbackFactory
+            callback_data = MyCallback.unpack(event.data)
+            return callback_data.user_id if callback_data.user_id is not None else (event.data + "_").split("_")[1]
+        except Exception:
+            # Если данные не являются DriverCallbackFactory, то берем значение после _
+            return (event.data + "_").split("_")[1]
 
     async def get_random_restriction_text(self):
         # Список из разных фраз ограничений, говорящих, что нельзя нажимать эту кнопку

@@ -2,11 +2,11 @@ import logging
 import random
 from datetime import datetime, timedelta
 
-from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.queue_dao import QueueDAO
+from handlers.driver_callback import add_button
 from models.driver import Driver
 from services.parking_service import ParkingService
 
@@ -45,9 +45,8 @@ class QueueService:
         for q in missed:
             logger.info(f"{q.driver.description} пропустил очередь на место {q.spot_id}")
             builder = InlineKeyboardBuilder()
-            builder.add(
-                InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(q.driver.chat_id)))
-            builder.add(InlineKeyboardButton(text="ℹ️ Статус", callback_data='show-status_' + str(q.driver.chat_id)))
+            add_button("✋ Покинуть очередь", "leave-queue", q.driver.chat_id, builder)
+            add_button("ℹ️ Статус", "show-status", q.driver.chat_id, builder)
             builder.adjust(1)
             await bot.send_message(chat_id=q.driver.chat_id,
                                    text=f"❌ Вы пропустили вашу очередь.\n\nМесто {q.spot_id} будет разыграно заново.",
@@ -72,13 +71,11 @@ class QueueService:
             q.choose_before = datetime.now() + timedelta(minutes=10)
 
             builder = InlineKeyboardBuilder()
-            builder.add(InlineKeyboardButton(text=f"⚪️ {spot.id}",
-                                             callback_data="occupy-spot_" + str(q.driver.chat_id) + "_" + str(spot.id)))
-            builder.add(
-                InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(q.driver.chat_id)))
+            add_button(f"⚪️ {spot.id}", "occupy-spot", q.driver.chat_id, builder, spot.id)
+            add_button("✋ Покинуть очередь", "leave-queue", q.driver.chat_id, builder)
             builder.adjust(1)
             await bot.send_message(chat_id=q.driver.chat_id,
-                                   text=f"Появилось свободное место: {spot.id}.\n\nМесто будет доступно до {q.choose_before.strftime('%d.%m.%Y %H:%M')}.",
+                                   text=f"Появилось свободное место: {spot.id}.\n\nМесто будет доступно до {q.choose_before.strftime('%H:%M')}.",
                                    reply_markup=builder.as_markup())
             logger.info(
                 f"{q.driver.description} может занять место {q.spot_id} до {q.choose_before.strftime('%d.%m.%Y %H:%M')}")

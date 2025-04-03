@@ -8,6 +8,7 @@ from aiogram.types import Message, BufferedInputFile, CallbackQuery
 from aiogram.utils.formatting import Text, Bold, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
 from services.parking_service import ParkingService
 from utils.map_generator import generate_parking_map
@@ -45,8 +46,8 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
         caption=f"Карта парковки на завтра {day.strftime('%d.%m.%Y')}\n\n"
-                f"🔴 - зарезервировано\n"
-                f"{'🟡 - зарезервировано Вами\n' if is_private else ''}"
+                f"🔴 - забронировано\n"
+                f"{'🟡 - забронировано Вами\n' if is_private else ''}"
                 f"🟢 - свободно"
     )
     if is_private:
@@ -76,21 +77,23 @@ async def map_command(message: Message, session, driver, current_day, is_private
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
         caption=f"Карта парковки на {current_day.strftime('%d.%m.%Y')}.\n"
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')})\n\n"
-                f"🔴 - зарезервировано\n"
-                f"{'🟡 - зарезервировано Вами\n' if is_private else ''}"
+                f"🔴 - забронировано\n"
+                f"{'🟡 - забронировано Вами\n' if is_private else ''}"
                 f"🟢 - свободно"
     )
     if is_private:
         await spot_selection(message, session, driver, True)
 
 
-@router.callback_query(F.data.startswith("edit-schedule"), flags={"check_driver": True})
+@router.callback_query(MyCallback.filter(F.action == "edit-schedule"),
+                       flags={"check_driver": True, "check_callback": True})
 async def handle_spot_selection(callback: CallbackQuery, session, driver):
     await spot_selection(callback.message, session, driver, True)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("choose-spots"), flags={"check_driver": True})
+@router.callback_query(MyCallback.filter(F.action == "choose-spots"),
+                       flags={"check_driver": True, "check_callback": True})
 async def handle_spot_selection(callback: CallbackQuery, session, driver):
     await spot_selection(callback.message, session, driver, False)
 
@@ -115,10 +118,7 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
         return
 
     for spot in spots:
-        builder.button(
-            text=f"{spot.id}",
-            callback_data=f"select-spot_{spot.id}"
-        )
+        add_button(f"{spot.id}", "select-spot", driver.chat_id, builder, spot.id)
     builder.adjust(3)
 
     reservations = driver.reservations

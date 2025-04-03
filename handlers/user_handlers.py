@@ -5,11 +5,12 @@ from datetime import timedelta
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
-from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, CallbackQuery
 from aiogram.utils.formatting import Text, TextLink, Bold, as_marked_section, as_key_value
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from handlers.driver_callback import MyCallback, add_button
 from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
@@ -27,7 +28,8 @@ async def show_status(message: Message, session: AsyncSession, driver: Driver, c
     await message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
-@router.callback_query(F.data.startswith("show-status_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "show-status"),
+                       flags={"check_driver": True, "check_callback": True})
 async def show_status_callback(callback: CallbackQuery, session, driver, current_day, is_private):
     content, builder = await get_status_message(driver, is_private, session, current_day)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
@@ -43,23 +45,21 @@ async def get_status_message(driver, is_private, session, current_day):
 
     builder = InlineKeyboardBuilder()
     if is_absent:
-        builder.add(InlineKeyboardButton(text="🏎️ Вернулся раньше...", callback_data="comeback_" + str(driver.chat_id)))
+        add_button("🏎️ Вернулся раньше...", "comeback", driver.chat_id, builder)
     else:
         if occupied_spots:
-            builder.add(InlineKeyboardButton(text="🫶 Уехал", callback_data="absent_" + str(driver.chat_id)))
+            add_button("🫶 Уехал", "absent", driver.chat_id, builder)
         else:
-            builder.add(InlineKeyboardButton(text="🚗 Приеду...", callback_data="book_" + str(driver.chat_id)))
-            builder.add(InlineKeyboardButton(text="🫶 Не приеду", callback_data="absent_" + str(driver.chat_id)))
+            add_button("🚗 Приеду...", "comeback", driver.chat_id, builder)
+            add_button("🫶 Не приеду", "absent", driver.chat_id, builder)
         if in_queue:
-            builder.add(
-                InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
+            add_button("✋ Покинуть очередь", "leave-queue", driver.chat_id, builder)
             # А встать в очередь можно только через меню, когда хочешь приехать
 
     if driver.attributes.get("plus", -1) > -1:
-        builder.add(InlineKeyboardButton(text="🎲 Розыгрыш кармы!",
-                                         callback_data='plus-karma_' + str(driver.chat_id)))
+        add_button("🎲 Розыгрыш кармы!", "plus-karma", driver.chat_id, builder)
     if is_private:
-        builder.add(InlineKeyboardButton(text="📅 Расписание...", callback_data='edit-schedule'))
+        add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
     if occupied_spots or is_absent:
         builder.adjust(1)
@@ -128,7 +128,8 @@ async def absent(message: Message, session: AsyncSession, driver: Driver, curren
     await absent_x_days(2, driver, message, session, current_day, is_private)
 
 
-@router.callback_query(F.data.startswith("absent_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "absent"),
+                       flags={"check_driver": True, "check_callback": True})
 async def absent_callback(callback: CallbackQuery, session, driver, current_day, is_private):
     await absent_x_days(1, driver, callback, session, current_day, is_private)
 
@@ -149,17 +150,17 @@ async def absent_x_days(days, driver, event, session, current_day, is_private=Fa
 
 @router.message(or_f(Command("book"), F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))")),
                 flags={"check_driver": True})
-async def comeback(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
-    await comeback_driver(driver, message, session, current_day, is_private)
+async def comeback(message: Message, session: AsyncSession, driver: Driver, current_day):
+    await comeback_driver(driver, message, session, current_day)
 
 
-@router.callback_query(or_f(F.data.startswith("comeback_"), F.data.startswith("book_")),
+@router.callback_query(MyCallback.filter(F.action == "comeback"),
                        flags={"check_driver": True, "check_callback": True})
-async def comeback_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    await comeback_driver(driver, callback, session, current_day, is_private)
+async def comeback_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day):
+    await comeback_driver(driver, callback, session, current_day)
 
 
-async def comeback_driver(driver, event, session, current_day, is_private=False):
+async def comeback_driver(driver, event, session, current_day):
     """ Водитель хочет приехать """
     today = current_day
     if driver.is_absent(today):
@@ -200,21 +201,18 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
                         allow_queue = False
                     else:
                         pref = "🔴"
-                builder.add(InlineKeyboardButton(text=f"{pref} {spot.id}",
-                                                 callback_data=f"occupy-spot_{str(driver.chat_id)}_{spot.id}"))
+                add_button(f"{pref} {spot.id}", "occupy-spot", driver.chat_id, builder, spot.id)
             sizes = [len(driver.my_spots()), 1]
 
         # потом вступаем в очередь
         if allow_queue:
             in_queue = await QueueService(session).is_driver_in_queue(driver)
             if in_queue:
-                builder.add(
-                    InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="leave-queue_" + str(driver.chat_id)))
+                add_button("✋ Покинуть очередь", "leave-queue", driver.chat_id, builder)
             else:
-                builder.add(
-                    InlineKeyboardButton(text="🙋 Встать в очередь", callback_data="join-queue_" + str(driver.chat_id)))
+                add_button("🙋 Встать в очередь", "join-queue", driver.chat_id, builder)
 
-    builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data='show-status_' + str(driver.chat_id)))
+    add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(*sizes)
     if isinstance(event, CallbackQuery):
         await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
@@ -222,14 +220,17 @@ async def comeback_driver(driver, event, session, current_day, is_private=False)
         await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
-@router.callback_query(F.data.startswith("occupy-spot_"), flags={"check_driver": True, "check_callback": True})
-async def occupy_spot_callback(callback: CallbackQuery, session, driver, current_day, is_private):
-    await ParkingService(session).occupy_spot(driver, int(callback.data.split("_")[2]))
+@router.callback_query(MyCallback.filter(F.action == "occupy-spot"),
+                       flags={"check_driver": True, "check_callback": True})
+async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day,
+                               is_private):
+    await ParkingService(session).occupy_spot(driver, callback_data.spot_id)
     await QueueService(session).leave_queue(driver)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.callback_query(F.data.startswith("plus-karma_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "plus-karma"),
+                       flags={"check_driver": True, "check_callback": True})
 async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     if driver.attributes.get("plus", -1) < 0:
         await callback.answer("❎ Вы не можете получить больше кармы.\n\nМожет завтра повезет.", show_alert=True)
@@ -258,7 +259,8 @@ async def top_karma(message: Message, session: AsyncSession, driver: Driver, cur
     await message.reply(**content.as_kwargs())
 
 
-@router.callback_query(F.data.startswith("leave-queue_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "leave-queue"),
+                       flags={"check_driver": True, "check_callback": True})
 async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     queue_service = QueueService(session)
     in_queue = await queue_service.is_driver_in_queue(driver)
@@ -270,7 +272,8 @@ async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Dr
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.callback_query(F.data.startswith("join-queue_"), flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "join-queue"),
+                       flags={"check_driver": True, "check_callback": True})
 async def join_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     queue_service = QueueService(session)
     in_queue = await queue_service.is_driver_in_queue(driver)
