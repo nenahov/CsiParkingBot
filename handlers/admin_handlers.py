@@ -39,17 +39,21 @@ async def list_params_handler(message: Message, param_service: ParamService):
 
 
 @router.message(
-    F.text.regexp(r"(?i).*начислить.*(\d+).*карм").as_("match"), flags={"check_admin": True})
+    F.text.regexp(r"(?i).*начислить.*(\d+).*карм").as_("match"), flags={"check_admin": True, "check_driver": True})
 async def absent(message: Message, session: AsyncSession, is_private, match: re.Match):
-    if message.reply_to_message:
-        karma = int(match.group(1))  # Извлекаем количество добавляемой кармы
-        # Получаем id пользователя, на сообщение которого дан ответ
-        replied_user_id = message.reply_to_message.from_user.id
-        driver = await DriverService(session).get_by_chat_id(replied_user_id)
-        if driver:
-            driver.attributes['karma'] = driver.attributes.get('karma', 0) + karma
-            await message.answer(f"{'💖' if karma > 0 else '💔'} {driver.description} получает {karma} кармы.")
-        else:
-            await message.answer("Пользователь не нашелся в базе данных.")
-    else:
+    if is_private:
+        await message.answer("Команда недоступна в личных сообщениях.")
+        return
+    if not message.reply_to_message:
         await message.answer("Пожалуйста, ответьте на сообщение пользователя, кому хотите начислить карму.")
+        return
+
+    karma = int(match.group(1))  # Извлекаем количество добавляемой кармы
+    # Получаем id пользователя, на сообщение которого дан ответ
+    replied_user_id = message.reply_to_message.from_user.id
+    driver = await DriverService(session).get_by_chat_id(replied_user_id)
+    if driver:
+        driver.attributes['karma'] = driver.attributes.get('karma', 0) + karma
+        await message.answer(f"{'💖' if karma > 0 else '💔'} {driver.description} получает {karma} кармы.")
+    else:
+        await message.answer("Пользователь не нашелся в базе данных.")
