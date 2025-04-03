@@ -77,12 +77,16 @@ async def get_status_message(driver, is_private, session, current_day):
     if occupied_spots:
         content += Bold("Вы стоите на: 🅿️ ") + ", ".join([str(spot.id) for spot in occupied_spots]) + '\n\n'
 
-    content += as_marked_section(
-        Bold(f"Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
-        *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations, session)}")
-          for spot in driver.my_spots()],
-        marker="• ", ) + '\n\n'
+    if driver.my_spots():
+        content += as_marked_section(
+            Bold(f"Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
+            *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations, session)}")
+              for spot in driver.my_spots()],
+            marker="• ", )
+    else:
+        content += Bold("Нет закрепленных мест")
 
+    content += '\n\n'
     content += as_key_value("Карма", driver.attributes.get("karma", 0))
 
     return content, builder
