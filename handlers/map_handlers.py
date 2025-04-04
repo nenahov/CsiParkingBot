@@ -1,4 +1,3 @@
-import re
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -14,12 +13,6 @@ from services.parking_service import ParkingService
 from utils.map_generator import generate_parking_map
 
 router = Router()
-
-
-@router.message(F.text.regexp(r"^(\d+)$").as_("digits"), flags={"check_driver": True})
-async def any_digits_handler(message: Message, digits: re.Match[str]):
-    await message.answer(str(digits))
-
 
 @router.message(F.text.regexp(r"(?i)(.*пока.* карт(а|у) на завтра)|(.*карт(а|у) парковки на завтра)"),
                 flags={"long_operation": "upload_photo", "check_driver": True})
