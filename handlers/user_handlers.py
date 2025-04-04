@@ -109,7 +109,7 @@ async def get_spot_info(spot, reservations, session):
         current = f" / Занято! ({spot.current_driver.title})"
     elif spot.status == SpotStatus.FREE:
         await session.refresh(spot, ["current_driver"])
-        current = f" / Уже свободно ({spot.current_driver.title})"
+        current = f" / Уже свободно ({spot.current_driver.title if spot.current_driver else ''})"
     return res + current
 
 @router.message(

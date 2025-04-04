@@ -28,8 +28,7 @@ class ParkingSpotDAO:
     async def leave_spot(self, driver):
         await self.session.execute(update(ParkingSpot).
                                    where(ParkingSpot.current_driver_id.is_(driver.id)).
-                                   values(status=SpotStatus.FREE,
-                                          current_driver_id=None))
+                                   values(status=SpotStatus.FREE))
 
     async def occupy_spot(self, driver, spot_id: int, without_demand=True):
         await self.session.execute(update(ParkingSpot).
