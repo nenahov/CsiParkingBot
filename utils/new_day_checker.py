@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 async def check_current_day(session, param_service):
     # Получаем текущий день
-    new_day_offset = await param_service.get_parameter("new_day_offset", "4")
+    new_day_offset = await param_service.get_parameter("new_day_offset", "5")
     current_day = (datetime.now() + timedelta(hours=int(new_day_offset))).date()
 
     current_day_str = current_day.strftime('%d.%m.%Y')

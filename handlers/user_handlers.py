@@ -108,10 +108,9 @@ async def get_spot_info(spot, reservations, session):
         await session.refresh(spot, ["current_driver"])
         current = f" / Занято! ({spot.current_driver.title})"
     elif spot.status == SpotStatus.FREE:
-        current = ' / Уже свободно'
-
+        await session.refresh(spot, ["current_driver"])
+        current = f" / Уже свободно ({spot.current_driver.title})"
     return res + current
-
 
 @router.message(
     F.text.regexp(r"(?i).*((уехал.*на|меня не будет|буду отсутствовать) (\d+) (день|дня|дней))").as_("match"),
@@ -119,7 +118,6 @@ async def get_spot_info(spot, reservations, session):
 async def absent(message: Message, session: AsyncSession, driver: Driver, current_day, is_private, match: re.Match):
     days = int(match.group(3))  # Извлекаем количество дней
     await absent_x_days(days, driver, message, session, current_day, is_private)
-
 
 @router.message(
     or_f(Command("free"), F.text.regexp(r"(?i).*((не приеду сегодня)|(уже уехал))")), flags={"check_driver": True})
