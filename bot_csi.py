@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiogram import Bot, Dispatcher
@@ -31,6 +32,7 @@ async def main():
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_message_to_queue, "interval", seconds=1 * 60, args=(bot,))
+    logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
     scheduler.start()
 
     # await insert_test_data()
