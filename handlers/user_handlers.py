@@ -265,7 +265,7 @@ async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallbac
     await session.refresh(spot, ["current_driver"])
     queue_service = QueueService(session)
     if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
-        if queue_service.is_driver_in_queue(driver):
+        if await queue_service.is_driver_in_queue(driver):
             await queue_service.leave_queue(driver)
             await queue_service.join_queue(driver)
         await callback.answer(f"Место занято: {spot.current_driver.description}", show_alert=True)
