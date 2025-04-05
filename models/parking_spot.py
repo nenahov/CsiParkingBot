@@ -1,7 +1,17 @@
-from sqlalchemy import Column, Integer, Table, ForeignKey
+from enum import Enum as PyEnum
+
+from sqlalchemy import Column, Integer, ForeignKey, Enum
+from sqlalchemy import Table
 from sqlalchemy.orm import relationship
 
 from config.database import Base
+
+
+class SpotStatus(PyEnum):
+    HIDEN = "hiden"
+    FREE = "free"
+    OCCUPIED = "occupied"
+    OCCUPIED_WITHOUT_DEMAND = "occupied_without_demand"
 
 parking_spot_driver_association = Table(
     'parking_spot_driver',
@@ -13,11 +23,15 @@ parking_spot_driver_association = Table(
 
 class ParkingSpot(Base):
     __tablename__ = 'parkingspots'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=False, index=True)
     x = Column(Integer)
     y = Column(Integer)
     width = Column(Integer)
     height = Column(Integer)
 
-    drivers = relationship("Driver", secondary=parking_spot_driver_association)
+    status = Column(Enum(SpotStatus), default=SpotStatus.FREE)
+    current_driver_id = Column(Integer, ForeignKey('drivers.id'))
+
+    drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots")
+    current_driver = relationship("Driver", back_populates="current_spots")
     reservations = relationship("Reservation", back_populates="parking_spot")

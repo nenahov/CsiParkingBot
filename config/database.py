@@ -1,8 +1,10 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import declarative_base
 
 # Загрузка переменных окружения из .env
 load_dotenv()
@@ -16,7 +18,7 @@ DATABASE_URL = os.getenv(
 # Создание асинхронного движка
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Логирование SQL-запросов (можно отключить для продакшена)
+    echo=False,  # Логирование SQL-запросов (можно отключить для продакшена)
     future=True
 )
 
@@ -24,28 +26,8 @@ engine = create_async_engine(
 Base = declarative_base()
 
 # Фабрика сессий с настройками
-async_session_maker = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
-)
-
-
-async def get_async_session() -> AsyncSession:
-    """
-    Генератор сессий для зависимостей FastAPI или ручного использования
-    """
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            raise e
-        finally:
-            await session.close()
-
+db_pool = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
 async def create_database():
     """
