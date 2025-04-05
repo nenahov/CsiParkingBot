@@ -34,7 +34,7 @@ class NotificationSender:
                              spot_id: int, karma_change: int, keyboard: InlineKeyboardMarkup = None):
         """Отправка уведомления водителю с опциональной клавиатурой."""
         # Проверка наличия разрешения на принятие данного типа уведомления от бота у водителя driver_to
-        if not driver_to.attributes.get(event_type.name, True):
+        if not driver_to.enabled or not driver_to.attributes.get(event_type.name, True):
             return
         message = event_type.value["text"].format(spot_id=spot_id, driver_from=driver_from, driver_to=driver_to,
                                                   karma_change=karma_change)
