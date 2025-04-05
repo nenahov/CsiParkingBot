@@ -130,7 +130,7 @@ async def spot_selection(message: Message, session, driver: Driver, is_new: bool
                                   for res in reservations
                                   if res.day_of_week == num)
                         if any(res.day_of_week == num for res in reservations)
-                        else "нет бронирования"
+                        else "у Вас нет бронирования"
                     )
                 ),
                 "\n"
