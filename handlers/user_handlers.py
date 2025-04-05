@@ -14,6 +14,7 @@ from handlers.driver_callback import MyCallback, add_button
 from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
+from services.notification_sender import NotificationSender, EventType
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
@@ -112,12 +113,14 @@ async def get_spot_info(spot, reservations, session):
         current = f" / Уже свободно ({spot.current_driver.title if spot.current_driver else ''})"
     return res + current
 
+
 @router.message(
     F.text.regexp(r"(?i).*((уехал.*на|меня не будет|буду отсутствовать) (\d+) (день|дня|дней))").as_("match"),
     flags={"check_driver": True})
 async def absent(message: Message, session: AsyncSession, driver: Driver, current_day, is_private, match: re.Match):
     days = int(match.group(3))  # Извлекаем количество дней
     await absent_x_days(days, driver, message, session, current_day, is_private)
+
 
 @router.message(
     or_f(Command("free"), F.text.regexp(r"(?i).*((не приеду сегодня)|(уже уехал))")), flags={"check_driver": True})
@@ -170,10 +173,12 @@ async def absent_confirm_callback(callback: CallbackQuery, callback_data: MyCall
     await absent_x_days(callback_data.day_num, driver, callback, session, current_day, is_private)
 
 
-async def absent_x_days(days, driver, event, session, current_day, is_private=False):
+async def absent_x_days(days, driver: Driver, event, session, current_day, is_private=False):
     # прибавим к сегодня N дней и покажем дату
     date = current_day + timedelta(days=days)
     driver.absent_until = date
+    await session.refresh(driver, ["current_spots"])
+    current_spots = driver.get_occupied_spots()
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
     if isinstance(event, CallbackQuery):
@@ -182,6 +187,13 @@ async def absent_x_days(days, driver, event, session, current_day, is_private=Fa
         await event.reply(f"Вы уехали до {date.strftime('%d.%m.%Y')}")
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
+
+    notification_sender = NotificationSender(event.bot)
+    for spot in current_spots:
+        await session.refresh(spot, ["drivers"])
+        for owner in spot.drivers:
+            if owner.id != driver.id:
+                await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0)
 
 
 @router.message(or_f(Command("book"), F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))")),
@@ -262,7 +274,7 @@ async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallbac
                                is_private):
     parking_service = ParkingService(session)
     spot = await parking_service.get_spot_by_id(callback_data.spot_id)
-    await session.refresh(spot, ["current_driver"])
+    await session.refresh(spot, ["current_driver", "drivers"])
     queue_service = QueueService(session)
     if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
         if await queue_service.is_driver_in_queue(driver):
@@ -272,7 +284,13 @@ async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallbac
         return
     await parking_service.occupy_spot(driver, callback_data.spot_id)
     await queue_service.leave_queue(driver)
+    await callback.answer(f"Вы заняли место 🅿️ {spot.id}.\n\nНе забудьте его освободить, если уезжаете не поздно 🫶",
+                          show_alert=True)
     await show_status_callback(callback, session, driver, current_day, is_private)
+    notification_sender = NotificationSender(callback.bot)
+    for owner in spot.drivers:
+        if owner.id != driver.id:
+            await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, "", spot.id, 0)
 
 
 @router.callback_query(MyCallback.filter(F.action == "plus-karma"),
