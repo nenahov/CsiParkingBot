@@ -9,12 +9,12 @@ COLORS = {
     'my_reserved': (255, 250, 0, 150),  # Желтый
     'reserved': (255, 20, 20, 97),  # Красный
 
-    str(SpotStatus.HIDEN): (0, 0, 0, 30),  # Светло-зеленый
+    str(SpotStatus.HIDDEN): (0, 0, 0, 30),  # Светло-зеленый
     str(SpotStatus.FREE): (100, 255, 100, 200),  # Светло-зеленый
     str(SpotStatus.OCCUPIED): (255, 20, 20, 200),  # Красный
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND): (255, 20, 20, 250),  # Красный
 
-    str(SpotStatus.HIDEN) + "_me": (0, 0, 0, 250),  # Светло-зеленый
+    str(SpotStatus.HIDDEN) + "_me": (0, 0, 0, 250),  # Светло-зеленый
     str(SpotStatus.FREE) + "_me": (100, 255, 100, 250),  # Светло-зеленый
     str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 250),  # Желтый
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND) + "_me": (255, 200, 20, 250),  # Красный
