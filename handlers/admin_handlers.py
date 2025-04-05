@@ -41,7 +41,7 @@ async def list_params_handler(message: Message, param_service: ParamService):
 @router.message(
     F.text.regexp(r"(?i).*начислить.* ([+-]?\d+) .*карм").as_("match"),
     flags={"check_admin": True, "check_driver": True})
-async def absent(message: Message, session: AsyncSession, is_private, match: re.Match):
+async def plus_karma(message: Message, session: AsyncSession, is_private, match: re.Match):
     if is_private:
         await message.answer("Команда недоступна в личных сообщениях.")
         return
@@ -55,6 +55,7 @@ async def absent(message: Message, session: AsyncSession, is_private, match: re.
     driver = await DriverService(session).get_by_chat_id(replied_user_id)
     if driver:
         driver.attributes['karma'] = driver.attributes.get('karma', 0) + karma
-        await message.answer(f"{'💖' if karma > 0 else '💔'} {driver.description} получает {karma} кармы.")
+        await message.answer(
+            f"{'💖' if karma >= 0 else '💔'} {driver.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
     else:
         await message.answer("Пользователь не нашелся в базе данных.")

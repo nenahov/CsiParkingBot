@@ -294,7 +294,7 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.message(F.text.regexp(r"(?i)(.*топ карма)"), flags={"check_driver": True})
+@router.message(F.text.regexp(r"(?i)(.*топ карм)"), flags={"check_driver": True})
 async def top_karma(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
     drivers = await DriverService(session).get_top_karma_drivers(10)
     content = Text(Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n"))

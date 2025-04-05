@@ -31,7 +31,7 @@ async def leave_queue(message: Message, session, driver, is_private):
     await message.reply(f"Теперь вы не в очереди")
 
 
-@router.message(F.text.regexp(r"(?i)(.*встать в очередь)|(.*свободное мест)"), flags={"check_driver": True})
+@router.message(F.text.regexp(r"(?i)(.*встать в очередь)|(.*хочу свободное место)"), flags={"check_driver": True})
 async def join_queue(message: Message, session, driver, is_private):
     queue_service = QueueService(session)
     in_queue = await queue_service.is_driver_in_queue(driver)
