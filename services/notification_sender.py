@@ -1,9 +1,12 @@
+import logging
 from enum import Enum as PyEnum
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup
 
 from models.driver import Driver
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(PyEnum):
@@ -37,7 +40,11 @@ class NotificationSender:
                                                   karma_change=karma_change)
         if add_message is not None and add_message != "":
             message += "\n\n" + add_message
-        await self.send_notification(driver_to.chat_id, message, keyboard)
+        logger.info(f"{driver_from.title} -> {driver_to.title}: {message}")
+        try:
+            await self.send_notification(driver_to.chat_id, message, keyboard)
+        except Exception as e:
+            logger.error(f"Error sending notification to {driver_to.title}: {e}")
 
     async def send_notification(self, user_id: int, message: str, keyboard: InlineKeyboardMarkup = None):
         """Отправка уведомления пользователю с опциональной клавиатурой."""
