@@ -13,6 +13,7 @@ from services.parking_service import ParkingService
 
 logger = logging.getLogger(__name__)
 
+
 class QueueService:
     def __init__(self, session: AsyncSession):
         self.dao = QueueDAO(session)
@@ -65,9 +66,9 @@ class QueueService:
         while queue and spots:
             # Выбираем случайного человека из очереди и случайное свободное место
             add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
-            q = random.choices(queue,
-                               weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0)) for q in queue],
-                               k=1)[0]
+            q = random.choices(queue, weights=[max(1,
+                                                   add_weight_karma + q.driver.attributes.get("karma", 0))
+                                               for q in queue], k=1)[0]
             spot = random.choice(spots)
 
             # Обновляем данные для выбранного элемента очереди:
