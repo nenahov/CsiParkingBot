@@ -24,6 +24,7 @@ COLORS = {
 
 dx = -28
 dy = -16
+d_width = -1
 
 try:
     font = ImageFont.truetype("arial.ttf", 12)
@@ -50,13 +51,24 @@ def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_s
         status = get_status(driver, reservations_data, spot, use_spot_status)
 
         # Создаем паттерн с диагональными полосами
-        pattern = create_diagonal_pattern(spot.width, spot.height,
+        pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
                                           stripe_width=4,
                                           color2=COLORS[status],
                                           color1=(255, 255, 255, 0))
 
         # Вставляем паттерн в прямоугольник
-        overlay.paste(pattern, (dx + spot.x, dy + spot.y))
+        x = dx + spot.x
+        y = dy + spot.y
+        if 18 <= spot.id <= 34:
+            x = 171 + int((spot.id - 18) * 51)
+            y = 371
+        elif 35 <= spot.id <= 51:
+            x = 171 + int((spot.id - 35) * 51)
+            y = 270
+        elif spot.id == 74:
+            x = 17
+            y = 220
+        overlay.paste(pattern, (x, y))
 
         # Добавляем текст
         # text = f"Место {spot.id}\n\n{reserved_by or 'Свободно'}"
@@ -64,8 +76,8 @@ def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_s
 
     # Рисуем мусорку
     garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
-    garbage_truck = garbage_truck.rotate(90, expand=True)
-    overlay.paste(garbage_truck, (878 + dx, 441 + dy), mask=garbage_truck)
+    garbage_truck = garbage_truck.rotate(270, expand=True)
+    overlay.paste(garbage_truck, (135, 170), mask=garbage_truck)
 
     # car20 = extract_sprite(cars2, (63, 288, 93, 365))
     # overlay.paste(car20, (827 + dx, 195 + dy), mask=car20)
