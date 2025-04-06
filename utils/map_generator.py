@@ -34,6 +34,8 @@ except:
 def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_spot_status: bool = True):
     # img = Image.new('RGB', (800, 600), (255, 255, 255))
     img = Image.open("./pics/parking.png")
+    cars = Image.open("./pics/cars.png").convert("RGBA")
+    cars2 = Image.open("./pics/cars2.png").convert("RGBA")
 
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -59,6 +61,14 @@ def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_s
         # Добавляем текст
         # text = f"Место {spot.id}\n\n{reserved_by or 'Свободно'}"
         # draw.text((dx + spot.x + 2, dy + spot.y + 5), text, font=font, fill=COLORS['text'])
+
+    # Рисуем мусорку
+    garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
+    garbage_truck = garbage_truck.rotate(90, expand=True)
+    overlay.paste(garbage_truck, (878 + dx, 441 + dy), mask=garbage_truck)
+
+    # car20 = extract_sprite(cars2, (63, 288, 93, 365))
+    # overlay.paste(car20, (827 + dx, 195 + dy), mask=car20)
 
     img = Image.alpha_composite(img, overlay)
 
@@ -94,3 +104,14 @@ def create_diagonal_pattern(width, height, stripe_width=10, color1="red", color2
 
     # Обрезаем до нужного размера
     return pattern.crop((width / 2, height / 2, width + width / 2, height + height / 2))
+
+
+def extract_sprite(sprite_sheet, sprite_rect):
+    """
+    Извлекает спрайт из спрайт-листа.
+
+    :param sprite_sheet: Изображение со спрайт-листом (PIL Image)
+    :param sprite_rect: Кортеж (left, top, right, bottom), задающий область спрайта
+    :return: Извлечённое изображение спрайта
+    """
+    return sprite_sheet.crop(sprite_rect)
