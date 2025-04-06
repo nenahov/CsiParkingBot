@@ -1,6 +1,9 @@
-from sqlalchemy import select, update, or_, exists, not_
+from datetime import date
+
+from sqlalchemy import select, update, or_, exists, not_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from models.reservation import Reservation
 
@@ -48,7 +51,7 @@ class ParkingSpotDAO:
         )
         return result.scalars().all()
 
-    async def get_free_spots(self, day_of_week: int):
+    async def get_free_spots(self, day_of_week: int, day: date):
         # получить места с пустым статусом или со статусом Free
         # и у которых нет резервирования в этот день недели
         result = await self.session.execute(
@@ -59,11 +62,14 @@ class ParkingSpotDAO:
                     ParkingSpot.status.is_(SpotStatus.FREE)
                 ),
                 not_(exists(
-                    select(Reservation).
-                    where(
-                        Reservation.parking_spot_id.is_(ParkingSpot.id),
-                        Reservation.day_of_week.is_(day_of_week)
-                    )
+                    select(Reservation)
+                    .join(Driver)
+                    .where(and_(Reservation.day_of_week.is_(day_of_week),
+                                Reservation.parking_spot_id.is_(ParkingSpot.id),
+                                Driver.enabled == True,
+                                or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
+                                )
+                           )
                 ))
             )
         )
