@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dao.queue_dao import QueueDAO
 from handlers.driver_callback import add_button
 from models.driver import Driver
+from services.param_service import ParamService
 from services.parking_service import ParkingService
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,10 @@ class QueueService:
 
         while queue and spots:
             # Выбираем случайного человека из очереди и случайное свободное место
-            q = random.choices(queue, weights=[max(1, q.driver.attributes.get("karma", 0)) for q in queue], k=1)[0]
+            add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
+            q = random.choices(queue,
+                               weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0)) for q in queue],
+                               k=1)[0]
             spot = random.choice(spots)
 
             # Обновляем данные для выбранного элемента очереди:
