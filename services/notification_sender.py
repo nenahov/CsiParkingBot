@@ -13,11 +13,12 @@ class EventType(PyEnum):
     """
     Перечисление типов уведомлений.
     """
-    SPOT_OCCUPIED = {"text": "Место {spot_id} занял {driver_from.description} /status", "button_text": "Заняли место"}
-    SPOT_RELEASED = {"text": "Место {spot_id} освободил {driver_from.description} /status",
+    SPOT_OCCUPIED = {"text": "Место {spot_id} занял{'а' if is_woman else ''} {driver_from.description} /status",
+                     "button_text": "Заняли место"}
+    SPOT_RELEASED = {"text": "Место {spot_id} освободил{'а' if is_woman else ''} {driver_from.description} /status",
                      "button_text": "Освободили место"}
     PARTNER_SAYS_TODAY_SPOT_FREE = {
-        "text": "{driver_from.description} сказал, что не приедет и место {spot_id} свободно /status",
+        "text": "{driver_from.description} сказал{'а' if is_woman else ''}, что не приедет и место {spot_id} свободно /status",
         "button_text": "Напарник не приедет"}
     KARMA_CHANGED = {"text": "💟 Ваша карма изменилась на {karma_change}", "button_text": "Изменение кармы"}
 
@@ -36,8 +37,9 @@ class NotificationSender:
         # Проверка наличия разрешения на принятие данного типа уведомления от бота у водителя driver_to
         if not driver_to.enabled or not driver_to.attributes.get(event_type.name, True):
             return
+        is_woman = driver_from.attributes.get("gender", "M") == "F"
         message = event_type.value["text"].format(spot_id=spot_id, driver_from=driver_from, driver_to=driver_to,
-                                                  karma_change=karma_change)
+                                                  karma_change=karma_change, is_woman=is_woman)
         if add_message is not None and add_message != "":
             message += "\n\n" + add_message
         logger.info(f"{driver_from.title} -> {driver_to.title}: {message}")

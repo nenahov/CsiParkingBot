@@ -96,22 +96,23 @@ async def get_status_message(driver, is_private, session, current_day):
 async def get_spot_info(spot, reservations, session):
     # ищем всех в reservations
     res_info = reservations.get(spot.id, [])
+
     if len(res_info) < 1:
-        res = "Нет брони"
+        res = "Свободно"
+        res_old = "Не было брони"
     else:
         res = "Бронь у " + ', '.join(res.driver.title for res in res_info)
+        res_old = "Была бронь у " + ', '.join(res.driver.title for res in res_info)
 
-    current = ''
+    await session.refresh(spot, ["current_driver"])
+    is_woman = spot.current_driver and spot.current_driver.attributes.get("gender", "M") == "F"
     if spot.status == SpotStatus.OCCUPIED:
-        await session.refresh(spot, ["current_driver"])
-        current = f" / Занято ({spot.current_driver.title})"
+        return f"Занял{'а' if is_woman else ''} {spot.current_driver.title} ({res_old})"
     elif spot.status == SpotStatus.OCCUPIED_WITHOUT_DEMAND:
-        await session.refresh(spot, ["current_driver"])
-        current = f" / Занято! ({spot.current_driver.title})"
+        return f"Занял{'а' if is_woman else ''} {spot.current_driver.title}! ({res_old})"
     elif spot.status == SpotStatus.FREE:
-        await session.refresh(spot, ["current_driver"])
-        current = f" / Уже свободно ({spot.current_driver.title if spot.current_driver else ''})"
-    return res + current
+        return f"Освободил{'а' if is_woman else ''} {spot.current_driver.title if spot.current_driver else ''} ({res_old})"
+    return res
 
 
 @router.message(
