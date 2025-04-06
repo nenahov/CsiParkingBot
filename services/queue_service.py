@@ -59,7 +59,7 @@ class QueueService:
         # Оставляем только людей, которым еще не предложено место
         queue = [q for q in queue if q.choose_before is None]
 
-        spots = list(await ParkingService(self.session).get_free_spots(current_week_day))
+        spots = list(await ParkingService(self.session).get_free_spots(current_week_day, current_day))
         # Оставляем только места, которые еще не участвуют в очереди
         spots = [s for s in spots if not any(q.spot_id == s.id for q in queue)]
 
