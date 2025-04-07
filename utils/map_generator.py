@@ -13,12 +13,12 @@ COLORS = {
 
     str(SpotStatus.HIDDEN): (0, 0, 0, 30),  # Светло-зеленый
     str(SpotStatus.FREE): (100, 255, 100, 200),  # Светло-зеленый
-    str(SpotStatus.OCCUPIED): (255, 20, 20, 200),  # Красный
+    str(SpotStatus.OCCUPIED): (255, 20, 20, 20),  # Красный
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND): (255, 20, 20, 250),  # Красный
 
     str(SpotStatus.HIDDEN) + "_me": (0, 0, 0, 250),  # Светло-зеленый
     str(SpotStatus.FREE) + "_me": (100, 255, 100, 250),  # Светло-зеленый
-    str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 250),  # Желтый
+    str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 25),  # Желтый
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND) + "_me": (255, 200, 20, 250),  # Красный
 
     'text': (0, 0, 0)  # Черный
