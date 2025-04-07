@@ -56,12 +56,13 @@ class QueueService:
             q.choose_before = None
             q.spot_id = None
 
-        # Оставляем только людей, которым еще не предложено место
-        queue = [q for q in queue if q.choose_before is None]
-
         spots = list(await ParkingService(self.session).get_free_spots(current_week_day, current_day))
-        # Оставляем только места, которые еще не участвуют в очереди
+
+        # Сначала оставляем только места, которые еще не участвуют в очереди
         spots = [s for s in spots if not any(q.spot_id == s.id for q in queue)]
+
+        # Потом оставляем только людей, которым еще не предложено место
+        queue = [q for q in queue if q.choose_before is None]
 
         while queue and spots:
             # Выбираем случайного человека из очереди и случайное свободное место
