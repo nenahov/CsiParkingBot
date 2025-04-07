@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -9,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
+from services.param_service import ParamService
 from services.parking_service import ParkingService
 from utils.map_generator import generate_parking_map
 
@@ -22,14 +24,12 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     # Получаем данные для карты
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(day)
+    frame_index = await get_frame_index(message, session)
 
     # Генерируем карту
-    img = generate_parking_map(
-        parking_spots=spots,
-        reservations_data=reservations,
-        driver=driver if is_private else None,
-        use_spot_status=False
-    )
+    img = generate_parking_map(parking_spots=spots, reservations_data=reservations,
+                               driver=driver if is_private else None,
+                               use_spot_status=False, frame_index=frame_index)
 
     img_buffer = BytesIO()
     img.save(img_buffer, format="PNG")
@@ -53,17 +53,22 @@ async def map_command(message: Message, session, driver, current_day, is_private
     # Получаем данные для карты
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
-
+    frame_index = await get_frame_index(message, session)
     # Генерируем карту
     img = generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
-        driver=driver if is_private else None
+        driver=driver if is_private else None,
+        frame_index=frame_index
     )
 
     img_buffer = BytesIO()
     img.save(img_buffer, format="PNG")
     img_buffer.seek(0)
+
+    builder = InlineKeyboardBuilder()
+    if is_private:
+        add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
     # Отправка изображения
     await message.answer_photo(
@@ -72,10 +77,20 @@ async def map_command(message: Message, session, driver, current_day, is_private
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')})\n\n"
                 f"🔴 - забронировано\n"
                 f"{'🟡 - забронировано Вами\n' if is_private else ''}"
-                f"🟢 - свободно"
+                f"🟢 - свободно",
+        reply_markup=builder.as_markup()
     )
-    if is_private:
-        await spot_selection(message, session, driver, True)
+
+
+async def get_frame_index(message, session):
+    param_service = ParamService(session)
+    chat_id = message.chat.id
+    frames_json = await param_service.get_parameter("map_frame_index", '{}')
+    frames = json.loads(frames_json)
+    frame_index = frames.get(str(chat_id), -1) + 1
+    frames[str(chat_id)] = frame_index
+    await param_service.set_parameter("map_frame_index", json.dumps(frames))
+    return frame_index
 
 
 @router.callback_query(MyCallback.filter(F.action == "edit-schedule"),
