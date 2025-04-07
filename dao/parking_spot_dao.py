@@ -56,21 +56,21 @@ class ParkingSpotDAO:
         # и у которых нет резервирования в этот день недели
         result = await self.session.execute(
             select(ParkingSpot).
-            where(
-                or_(
-                    ParkingSpot.status.is_(None),
-                    ParkingSpot.status.is_(SpotStatus.FREE)
-                ),
-                not_(exists(
-                    select(Reservation)
-                    .join(Driver)
-                    .where(and_(Reservation.day_of_week.is_(day_of_week),
-                                Reservation.parking_spot_id.is_(ParkingSpot.id),
-                                Driver.enabled == True,
-                                or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
-                                )
-                           )
-                ))
-            )
+            where(or_(ParkingSpot.status.is_(SpotStatus.FREE),
+                      and_(
+                          ParkingSpot.status.is_(None),
+                          not_(exists(
+                              select(Reservation)
+                              .join(Driver)
+                              .where(and_(Reservation.day_of_week.is_(day_of_week),
+                                          Reservation.parking_spot_id.is_(ParkingSpot.id),
+                                          Driver.enabled == True,
+                                          or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
+                                          )
+                                     )
+                          ))
+                      )
+                      )
+                  )
         )
         return result.scalars().all()

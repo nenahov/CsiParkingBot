@@ -194,7 +194,11 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
         await session.refresh(spot, ["drivers"])
         for owner in spot.drivers:
             if owner.id != driver.id:
-                await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0)
+                builder = InlineKeyboardBuilder()
+                add_button("🚗 Приеду...", "comeback", owner.chat_id, builder)
+                add_button("🫶 Не приеду", "absent", owner.chat_id, builder)
+                await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0,
+                                                         keyboard=builder.as_markup())
 
 
 @router.message(or_f(Command("book"), F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))")),
@@ -291,7 +295,11 @@ async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallbac
     notification_sender = NotificationSender(callback.bot)
     for owner in spot.drivers:
         if owner.id != driver.id:
-            await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, "", spot.id, 0)
+            builder = InlineKeyboardBuilder()
+            add_button("🚗 Приеду...", "comeback", owner.chat_id, builder)
+            add_button("🫶 Не приеду", "absent", owner.chat_id, builder)
+            await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, "", spot.id, 0,
+                                                     keyboard=builder.as_markup())
 
 
 @router.callback_query(MyCallback.filter(F.action == "plus-karma"),
