@@ -100,7 +100,11 @@ def generate_parking_map(parking_spots,
                 and spot.current_driver_id is not None
                 and spot.status is not None
                 and spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND)):
-            car_index = spot.current_driver_id
+            if spot.current_driver:
+                car_index = spot.current_driver.attributes.get("car_index", spot.current_driver_id)
+            else:
+                car_index = spot.current_driver_id
+
             car_image = extract_sprite(cars3, (50 * (car_index % 12), 100 * (car_index % 2),
                                                50 * (1 + (car_index % 12)), 100 * (1 + (car_index % 2))))
             scale = 0.8

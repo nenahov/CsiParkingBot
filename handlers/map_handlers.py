@@ -54,6 +54,8 @@ async def map_command(message: Message, session, driver, current_day, is_private
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
     frame_index = await get_frame_index(message, session)
+    for spot in spots:
+        await session.refresh(spot, ["current_driver"])
     # Генерируем карту
     img = generate_parking_map(
         parking_spots=spots,
