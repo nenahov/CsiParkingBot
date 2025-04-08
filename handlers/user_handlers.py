@@ -199,8 +199,6 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
 
 
-
-
 @router.message(or_f(Command("book"), F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))")),
                 flags={"check_driver": True})
 async def comeback(message: Message, session: AsyncSession, driver: Driver, current_day):
@@ -254,7 +252,7 @@ async def comeback_driver(driver, event, session, current_day):
                         allow_queue = False
                     else:
                         pref = "🔴"
-                add_button(f"{pref} {spot.id}", "occupy-spot", driver.chat_id, builder, spot.id)
+                add_button(f"{pref} {spot.id}", "occupy-my-spot", driver.chat_id, builder, spot.id)
             sizes = [len(driver.my_spots()), 1]
 
         # потом вступаем в очередь
@@ -273,19 +271,36 @@ async def comeback_driver(driver, event, session, current_day):
         await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
-@router.callback_query(MyCallback.filter(F.action == "occupy-spot"),
+@router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),
                        flags={"check_driver": True, "check_callback": True})
-async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day,
-                               is_private):
+async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver,
+                               current_day, is_private) -> None:
+    await occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue=False)
+
+
+@router.callback_query(MyCallback.filter(F.action == "occupy-spot-from-queue"),
+                       flags={"check_driver": True, "check_callback": True})
+async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver,
+                               current_day, is_private) -> None:
+    await occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue=True)
+
+
+async def occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue):
     parking_service = ParkingService(session)
     spot = await parking_service.get_spot_by_id(callback_data.spot_id)
     await session.refresh(spot, ["current_driver", "drivers"])
     queue_service = QueueService(session)
+    if check_queue:
+        queue = await queue_service.get_queue_by_driver(driver)
+        if not queue or queue.spot_id != callback_data.spot_id:
+            await callback.answer("❌ Вы не можете занять это место!", show_alert=True)
+            return
     if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
         if await queue_service.is_driver_in_queue(driver):
             await queue_service.leave_queue(driver)
             await queue_service.join_queue(driver)
-        await callback.answer(f"Место занято: {spot.current_driver.description}", show_alert=True)
+        await callback.answer(f"❌ Место занято: {spot.current_driver.description}\n\n Вы все ещё в очереди.",
+                              show_alert=True)
         return
     await parking_service.occupy_spot(driver, callback_data.spot_id)
     await queue_service.leave_queue(driver)

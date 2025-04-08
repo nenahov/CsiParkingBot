@@ -14,9 +14,9 @@ async def queue_command(message: Message, session, driver, is_private):
     queue_all = await queue_service.get_all()
     await message.reply(
         f"Текущее состояние очереди\n\n"
-        f"Всего в очереди: {len(queue_all)} человек\n\n"
+        f"Всего в очереди: {len(queue_all)} человек(а)\n\n"
         # Список позиций и водителей в очереди
-        f"{''.join(f'{i + 1}. {queue.driver.title}\n' for i, queue in enumerate(queue_all))}"
+        f"{''.join(f'• {queue.driver.title}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}"
     )
 
 
