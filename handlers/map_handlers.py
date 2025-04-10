@@ -12,9 +12,11 @@ from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
 from services.param_service import ParamService
 from services.parking_service import ParkingService
+from services.queue_service import QueueService
 from utils.map_generator import generate_parking_map
 
 router = Router()
+
 
 @router.message(F.text.regexp(r"(?i)(.*пока.* карт(а|у) на завтра)|(.*карт(а|у) парковки на завтра)"),
                 flags={"long_operation": "upload_photo", "check_driver": True})
@@ -72,6 +74,9 @@ async def map_command(message: Message, session, driver, current_day, is_private
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
+    queue_service = QueueService(session)
+    queue_all = await queue_service.get_all()
+
     # Отправка изображения
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
@@ -79,7 +84,10 @@ async def map_command(message: Message, session, driver, current_day, is_private
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')})\n\n"
                 f"🔴 - забронировано\n"
                 f"{'🟡 - забронировано Вами\n' if is_private else ''}"
-                f"🟢 - свободно",
+                f"🟢 - свободно\n\n"
+                f"Всего в очереди: {len(queue_all)} человек(а)\n"
+        # Список позиций и водителей в очереди
+                f"{''.join(f'• {queue.driver.title}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}",
         reply_markup=builder.as_markup()
     )
 
