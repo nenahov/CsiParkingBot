@@ -1,6 +1,7 @@
+from datetime import date
 from typing import Optional, Sequence
 
-from sqlalchemy import select, update, delete, func, cast, Integer
+from sqlalchemy import select, update, delete, func, cast, Integer, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
@@ -75,7 +76,7 @@ class DriverDAO:
             .limit(limit))
         return result.scalars().all()
 
-    async def get_partner_drivers(self, driver_id: int) -> set[Driver]:
+    async def get_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
         """
         Возвращает список водителей, имеющих общие парковочные места с заданным водителем,
         исключая самого водителя.
@@ -97,8 +98,13 @@ class DriverDAO:
         stmt = (
             select(Driver)
             .join(Driver.parking_spots)
-            .where(ParkingSpot.id.in_(parking_spot_ids))
-            .where(Driver.id != driver_id)
+            .where(and_(ParkingSpot.id.in_(parking_spot_ids),
+                        Driver.id != driver_id,
+                        Driver.enabled.is_(True)),
+                   or_(
+                       Driver.absent_until.is_(None),
+                       Driver.absent_until <= target_date
+                   ))
             .distinct()  # Чтобы избежать дублей, если водитель встречается в нескольких парковках
         )
         result = await self.session.execute(stmt)

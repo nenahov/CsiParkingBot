@@ -87,7 +87,7 @@ async def map_command(message: Message, session, driver, current_day, is_private
                 f"🟢 - свободно\n\n"
                 f"Всего в очереди: {len(queue_all)} человек(а)\n"
         # Список позиций и водителей в очереди
-                f"{''.join(f'• {queue.driver.title}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}",
+                f"{''.join(f'• {queue.driver.description}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}",
         reply_markup=builder.as_markup()
     )
 

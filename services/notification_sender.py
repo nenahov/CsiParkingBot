@@ -17,7 +17,7 @@ class EventType(PyEnum):
                      "button_text": "Заняли место"}
     SPOT_RELEASED = {"text": "Место {spot_id} освободил{suffix} {driver_from.description}",
                      "button_text": "Освободили место"}
-    PARTNER_SAYS_TODAY_SPOT_FREE = {
+    PARTNER_ABSENT = {
         "text": "{driver_from.description} сказал{suffix}, что не приедет до {my_date}",
         "button_text": "Напарник не приедет"}
     KARMA_CHANGED = {"text": "💟 Ваша карма изменилась на {karma_change}", "button_text": "Изменение кармы"}

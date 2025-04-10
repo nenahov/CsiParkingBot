@@ -181,24 +181,24 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     driver.absent_until = date
     await session.refresh(driver, ["current_spots"])
     current_spots = driver.get_occupied_spots()
-    partners = await DriverService(session).get_partner_drivers(driver.id)
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
     await send_alarm(event, f"Вы уехали до {date.strftime('%d.%m.%Y')}")
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
+    partners = await DriverService(session).get_partner_drivers(driver.id, date)
     notification_sender = NotificationSender(event.bot)
     for spot in current_spots:
         await session.refresh(spot, ["drivers"])
         for owner in spot.drivers:
             if owner.id != driver.id:
-                partners.remove(owner)
+                partners.discard(owner)
                 if await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0):
                     content, builder = await get_status_message(owner, True, session, current_day)
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
     for partner in partners:
-        if await notification_sender.send_to_driver(EventType.PARTNER_SAYS_TODAY_SPOT_FREE, driver, partner,
+        if await notification_sender.send_to_driver(EventType.PARTNER_ABSENT, driver, partner,
                                                     my_date=date.strftime('%d.%m.%Y')):
             content, builder = await get_status_message(partner, True, session, current_day)
             await event.bot.send_message(partner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
@@ -312,12 +312,18 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
     await callback.answer(f"Вы заняли место 🅿️ {spot.id}.\n\nНе забудьте его освободить, если уезжаете не поздно 🫶",
                           show_alert=True)
     await show_status_callback(callback, session, driver, current_day, is_private)
+    partners = await DriverService(session).get_partner_drivers(driver.id, current_day)
     notification_sender = NotificationSender(callback.bot)
     for owner in spot.drivers:
         if owner.id != driver.id:
+            partners.discard(owner)
             if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, "", spot.id, 0):
                 content, builder = await get_status_message(owner, True, session, current_day)
                 await callback.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
+    for partner in partners:
+        if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, partner, "", spot.id, 0):
+            content, builder = await get_status_message(partner, True, session, current_day)
+            await callback.bot.send_message(partner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
 
 
 @router.callback_query(MyCallback.filter(F.action == "plus-karma"),

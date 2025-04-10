@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,5 +28,5 @@ class DriverService:
     async def get_top_karma_drivers(self, limit: int = 10) -> Sequence[Driver]:
         return await self.dao.get_top_karma_drivers(limit)
 
-    async def get_partner_drivers(self, driver_id: int) -> set[Driver]:
-        return await self.dao.get_partner_drivers(driver_id)
+    async def get_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
+        return await self.dao.get_partner_drivers(driver_id, target_date)
