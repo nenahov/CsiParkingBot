@@ -4,6 +4,7 @@ from sqlalchemy import select, update, delete, func, cast, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
+from models.parking_spot import ParkingSpot
 
 
 class DriverDAO:
@@ -73,3 +74,34 @@ class DriverDAO:
             .order_by(cast(func.json_extract(Driver.attributes, '$.karma'), Integer).desc())
             .limit(limit))
         return result.scalars().all()
+
+    async def get_partner_drivers(self, driver_id: int) -> set[Driver]:
+        """
+        Возвращает список водителей, имеющих общие парковочные места с заданным водителем,
+        исключая самого водителя.
+        """
+        # 1. Определяем все id парковочных мест, с которыми связан данный водитель
+        stmt = (
+            select(ParkingSpot.id)
+            .join(ParkingSpot.drivers)
+            .where(Driver.id == driver_id)
+        )
+        result = await self.session.execute(stmt)
+        parking_spot_ids = [row[0] for row in result.all()]
+
+        if not parking_spot_ids:
+            return set()  # Если у водителя нет парковочных мест, возвращаем пустой список
+
+        # 2. Находим всех водителей, которые связаны с указанными парковочными местами,
+        # исключая исходного водителя
+        stmt = (
+            select(Driver)
+            .join(Driver.parking_spots)
+            .where(ParkingSpot.id.in_(parking_spot_ids))
+            .where(Driver.id != driver_id)
+            .distinct()  # Чтобы избежать дублей, если водитель встречается в нескольких парковках
+        )
+        result = await self.session.execute(stmt)
+        partner_drivers = result.scalars().all()
+
+        return set(partner_drivers)

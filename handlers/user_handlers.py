@@ -11,10 +11,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers.driver_callback import MyCallback, add_button
+from handlers.queue_handlers import join_queue, leave_queue
 from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
-from services.notification_sender import NotificationSender, EventType
+from services.notification_sender import NotificationSender, EventType, send_alarm
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
@@ -180,12 +181,10 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     driver.absent_until = date
     await session.refresh(driver, ["current_spots"])
     current_spots = driver.get_occupied_spots()
+    partners = await DriverService(session).get_partner_drivers(driver.id)
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
-    if isinstance(event, CallbackQuery):
-        await event.answer(f"Вы уехали до {date.strftime('%d.%m.%Y')}", show_alert=True)
-    else:
-        await event.reply(f"Вы уехали до {date.strftime('%d.%m.%Y')}")
+    await send_alarm(event, f"Вы уехали до {date.strftime('%d.%m.%Y')}")
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
@@ -194,9 +193,15 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
         await session.refresh(spot, ["drivers"])
         for owner in spot.drivers:
             if owner.id != driver.id:
+                partners.remove(owner)
                 if await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0):
                     content, builder = await get_status_message(owner, True, session, current_day)
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
+    for partner in partners:
+        if await notification_sender.send_to_driver(EventType.PARTNER_SAYS_TODAY_SPOT_FREE, driver, partner,
+                                                    my_date=date.strftime('%d.%m.%Y')):
+            content, builder = await get_status_message(partner, True, session, current_day)
+            await event.bot.send_message(partner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
 
 
 @router.message(or_f(Command("book"), F.text.regexp(r"(?i).*((вернулся раньше)|(приеду сегодня))")),
@@ -252,7 +257,7 @@ async def comeback_driver(driver, event, session, current_day):
                         allow_queue = False
                     else:
                         pref = "🔴"
-                add_button(f"{pref} {spot.id}", "occupy-my-spot", driver.chat_id, builder, spot.id)
+                add_button(f"Занять {pref} {spot.id}", "occupy-my-spot", driver.chat_id, builder, spot.id)
             sizes = [len(driver.my_spots()), 1]
 
         # потом вступаем в очередь
@@ -347,26 +352,13 @@ async def top_karma(message: Message, session: AsyncSession, driver: Driver, cur
 
 @router.callback_query(MyCallback.filter(F.action == "leave-queue"),
                        flags={"check_driver": True, "check_callback": True})
-async def leave_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    queue_service = QueueService(session)
-    in_queue = await queue_service.is_driver_in_queue(driver)
-    if not in_queue:
-        await callback.answer("Вы не в очереди", show_alert=True)
-    else:
-        await queue_service.leave_queue(driver)
-        await callback.answer(f"Теперь вы не в очереди", show_alert=True)
+async def leave_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
+    await leave_queue(callback, session, driver)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
 @router.callback_query(MyCallback.filter(F.action == "join-queue"),
                        flags={"check_driver": True, "check_callback": True})
-async def join_queue(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    queue_service = QueueService(session)
-    in_queue = await queue_service.is_driver_in_queue(driver)
-    if in_queue:
-        await callback.answer(f"Вы уже в очереди", show_alert=True)
-    else:
-        # TODO Если уже есть место, которое вы занимаете, то никакой очереди? или можно встать?
-        await queue_service.join_queue(driver)
-        await callback.answer(f"Вы встали в очередь", show_alert=True)
+async def join_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
+    await join_queue(callback, session, driver)
     await show_status_callback(callback, session, driver, current_day, is_private)
