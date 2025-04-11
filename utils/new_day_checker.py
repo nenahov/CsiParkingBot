@@ -19,7 +19,6 @@ async def check_current_day(session, param_service):
     old_day = await param_service.get_parameter("current_day")
     if not old_day or old_day != current_day_str:
         # смена дня
-        print(f"Наступил новый день: {current_day_str}")
         logger.info(f"Наступил новый день: {current_day_str}")
 
         # очищаем очереди и состояние парковки
