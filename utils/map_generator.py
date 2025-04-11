@@ -76,7 +76,13 @@ def generate_parking_map(parking_spots,
         car_x = -1000
         car_y = -1000
         car_rotate = 0
-        if 18 <= spot.id <= 34:
+        if 1 <= spot.id <= 17:
+            x = 120 + int((spot.id - 1) * 51)
+            y = 520
+            car_x = x + 3
+            car_y = y + 14
+            car_rotate = 0
+        elif 18 <= spot.id <= 34:
             x = 171 + int((spot.id - 18) * 51)
             y = 371
             car_x = x + 3
