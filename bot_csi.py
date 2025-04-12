@@ -67,7 +67,7 @@ async def main():
 async def send_message_to_queue(bot: Bot):
     async with db_pool() as session:
         try:
-            current_day = await check_current_day(session, ParamService(session))
+            current_day = await check_current_day(bot, session, ParamService(session))
             await QueueService(session).check_free_spots(bot, current_day)
             await session.commit()
         except Exception as e:
