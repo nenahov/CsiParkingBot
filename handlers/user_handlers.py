@@ -15,7 +15,7 @@ from handlers.queue_handlers import join_queue, leave_queue
 from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
-from services.notification_sender import NotificationSender, EventType, send_alarm
+from services.notification_sender import NotificationSender, EventType, send_alarm, send_reply
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
@@ -59,9 +59,10 @@ async def get_status_message(driver, is_private, session, current_day):
             # А встать в очередь можно только через меню, когда хочешь приехать
 
     if driver.attributes.get("plus", -1) > -1:
-        add_button("🎲 Розыгрыш кармы!", "plus-karma", driver.chat_id, builder)
+        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
+        add_button("🛎️ Настройки уведомлений...", "edit-alarms", driver.chat_id, builder)
 
     if occupied_spots or is_absent:
         builder.adjust(1)
@@ -162,10 +163,7 @@ async def absent_handler(event, session, driver, current_day, is_private):
                                      switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
-    if isinstance(event, CallbackQuery):
-        await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
-    else:
-        await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await send_reply(event, content, builder)
 
 
 @router.callback_query(MyCallback.filter(F.action == "absent-confirm"),
@@ -270,10 +268,7 @@ async def comeback_driver(driver, event, session, current_day):
 
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(*sizes)
-    if isinstance(event, CallbackQuery):
-        await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
-    else:
-        await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await send_reply(event, content, builder)
 
 
 @router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),
