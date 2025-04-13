@@ -1,4 +1,5 @@
 import asyncio
+import locale
 import logging
 import os
 
@@ -21,6 +22,9 @@ from utils.new_day_checker import check_current_day
 
 
 async def main():
+    # Устанавливаем локаль для русского языка
+    locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
+
     bot = Bot(token=os.getenv("BOT_TOKEN"))
     # Запускаем бота и пропускаем все накопленные входящие
     # Да, этот метод можно вызвать даже если у вас поллинг
