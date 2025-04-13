@@ -75,14 +75,14 @@ async def get_status_message(driver, is_private, session, current_day):
         content += Bold("Вы в очереди") + '\n\n'
 
     if is_absent:
-        content += Bold("Приеду не раньше: ") + driver.absent_until.strftime('%d.%m.%Y') + '\n\n'
+        content += Bold("Приеду не раньше: ") + driver.absent_until.strftime('%a %d.%m.%Y') + '\n\n'
 
     if occupied_spots:
         content += Bold("Вы стоите на: 🅿️ ") + ", ".join([str(spot.id) for spot in occupied_spots]) + '\n\n'
 
     if driver.my_spots():
         content += as_marked_section(
-            Bold(f"Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
+            Bold(f"Закрепленные места на {current_day.strftime('%a %d.%m.%Y')}:"),
             *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations, session)}")
               for spot in driver.my_spots()],
             marker="• ", )
@@ -181,7 +181,7 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     current_spots = driver.get_occupied_spots()
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
-    await send_alarm(event, f"Вы уехали до {date.strftime('%d.%m.%Y')}")
+    await send_alarm(event, f"Вы уехали до {date.strftime('%a %d.%m.%Y')}")
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
@@ -197,7 +197,7 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
     for partner in partners:
         if await notification_sender.send_to_driver(EventType.PARTNER_ABSENT, driver, partner,
-                                                    my_date=date.strftime('%d.%m.%Y')):
+                                                    my_date=date.strftime('%a %d.%m.%Y')):
             content, builder = await get_status_message(partner, True, session, current_day)
             await event.bot.send_message(partner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
 
@@ -225,7 +225,7 @@ async def comeback_driver(driver, event, session, current_day):
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
     occupied_spots = driver.get_occupied_spots()
     builder = InlineKeyboardBuilder()
-    content = Text(f"Вы хотите приехать {current_day.strftime('%d.%m.%Y')}\n\n")
+    content = Text(f"Вы хотите приехать в {current_day.strftime('%a %d.%m.%Y')}\n\n")
     sizes = [1]
     if occupied_spots:
         # сначала ищем в занятых
@@ -236,7 +236,7 @@ async def comeback_driver(driver, event, session, current_day):
             # потом в ваших местах
             spots, reservations = await ParkingService(session).get_spots_with_reservations(current_day)
             content += as_marked_section(
-                Bold(f"Закрепленные места на {current_day.strftime('%d.%m.%Y')}:"),
+                Bold(f"Закрепленные места на {current_day.strftime('%a %d.%m.%Y')}:"),
                 *[as_key_value(f"{spot.id}", f"{await get_spot_info(spot, reservations, session)}")
                   for spot in driver.my_spots()],
                 marker="• ", ) + '\n\n'

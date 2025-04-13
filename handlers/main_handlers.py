@@ -1,16 +1,15 @@
 import logging
-import os
 import random
 from datetime import datetime, timedelta
 
-import requests
 from aiogram import Router, F
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram.utils.formatting import Bold, Italic
 
+from models.driver import Driver
 from services.driver_service import DriverService
+from services.weather_service import WeatherService
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -55,14 +54,14 @@ async def start_command(message: Message, session):
 
     driver.attributes["test"] = random.randint(0, 100)
 
-    if message.chat.type == 'group':
-        members_count = await message.bot.get_chat_member_count(message.chat.id)
-        print(f"В группе {members_count} участников")
-        chat_info = await message.bot.get_chat(message.chat.id)
-        print(f"{chat_info}")
-        # members_list = [member.user.full_name for member in members]
-        # await message.answer("\n".join(members_list))
-        # await message.answer(f"В группе {members_count} участников")
+    # if message.chat.type == 'group':
+    #     members_count = await message.bot.get_chat_member_count(message.chat.id)
+    #     print(f"В группе {members_count} участников")
+    #     chat_info = await message.bot.get_chat(message.chat.id)
+    #     print(f"{chat_info}")
+    #     members_list = [member.user.full_name for member in members]
+    #     await message.answer("\n".join(members_list))
+    #     await message.answer(f"В группе {members_count} участников")
 
 
 @router.message(F.text.regexp(r"(?i)(.*написать разработчику)|(.*связаться с разработчиком)"))
@@ -73,57 +72,25 @@ async def dev_command(message: Message):
                                    parse_mode=ParseMode.MARKDOWN_V2)
 
 
-@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*завтра)"))
-async def show_weather(message: Message):
-    day = datetime.now() + timedelta(days=1)
-    content = await get_weather_content(day)
+@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*неделю)"), flags={"check_driver": True})
+async def show_weather_week(message: Message, driver: Driver, is_private):
+    content = await WeatherService().get_weekly_weather_content()
+    if is_private:
+        await message.reply(**content.as_kwargs())
+    else:
+        await message.answer("Много текста, отправил в ЛС.")
+        await message.bot.send_message(chat_id=driver.chat_id, **content.as_kwargs())
+
+
+@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*завтра)"), flags={"check_driver": True})
+async def show_weather_tomorrow(message: Message):
+    day = datetime.now().date() + timedelta(days=1)
+    content = await WeatherService().get_weather_content(day)
     await message.reply(**content.as_kwargs())
 
 
-@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод)"))
+@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод)"), flags={"check_driver": True})
 async def show_weather(message: Message):
-    day = datetime.now()
-    content = await get_weather_content(day)
+    day = datetime.now().date()
+    content = await WeatherService().get_weather_content(day)
     await message.reply(**content.as_kwargs())
-
-
-async def get_weather_content(day):
-    API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
-    CITY = "Saint Petersburg,RU"
-    BASE_URL = "http://api.openweathermap.org/data/2.5/forecast"
-    params = {
-        "q": CITY,
-        "appid": API_KEY,
-        "units": "metric",
-        "lang": "ru"
-    }
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-    logger.debug(f"{data}")
-    day_request = day.strftime("%Y-%m-%d")
-    weather_map = {
-        "01": "☀",
-        "02": "⛅️",
-        "03": "🌥️",
-        "04": "🌥️",
-        "09": "🌈",
-        "10": "🌧️",
-        "11": "⛈️",
-        "13": "🌨️",
-        "50": "🌫️"
-    }
-    is_ok = False
-    # Фильтрация прогноза на завтра
-    content = Bold(f"Погода на {day.strftime('%A %d.%m.%Y')}:")
-    for forecast in data["list"]:
-        date = forecast["dt_txt"].split()[0]
-        if date == day_request:
-            is_ok = True
-            time = forecast["dt_txt"].split()[1][:5]
-            temp = int(forecast["main"]["temp"])
-            desc = forecast["weather"][0]["description"]
-            icon = forecast["weather"][0]["icon"][:2]
-            content += f"\n{time}: \t{temp}°C, \t{weather_map.get(icon, "")} {desc}"
-    if not is_ok:
-        content += Italic("\nСервис временно недоступен 🤷")
-    return content

@@ -134,6 +134,8 @@ async def info_commands(callback: CallbackQuery):
             as_key_value(Text("🗺️ ", Code("показать карту парковки")),
                          "показывает карту парковки на текущий момент"),
             as_key_value(Text("🗺️ ", Code("показать карту на завтра")), "показывает карту парковки на завтра"),
+            as_key_value(Text("⛅️ ", Code("прогноз погоды")), "показывает прогноз погоды на сегодняшний день"),
+            as_key_value(Text("☀️ ", Code("прогноз погоды на завтра")), "показывает прогноз погоды на завтра"),
             as_key_value(Text("📝 ", Code("показать список команд")), "показывает список команд"),
             marker="• ", ))
     builder = InlineKeyboardBuilder()
@@ -141,10 +143,13 @@ async def info_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="🗺️ Показать карту", switch_inline_query_current_chat='Показать карту'))
     builder.add(InlineKeyboardButton(text="🗺️ Карта на завтра",
                                      switch_inline_query_current_chat='Показать карту на завтра'))
+    builder.add(InlineKeyboardButton(text="⛅️ Прогноз погоды", switch_inline_query_current_chat='Прогноз погоды'))
+    builder.add(InlineKeyboardButton(text="☀️ Прогноз погоды на завтра",
+                                     switch_inline_query_current_chat='Прогноз погоды на завтра'))
     builder.add(
         InlineKeyboardButton(text="📝 Показать список команд", switch_inline_query_current_chat='Список команд'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
-    builder.adjust(1, 2, 1, 1)
+    builder.adjust(1, 2, 2, 1, 1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 

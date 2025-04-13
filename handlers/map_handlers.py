@@ -40,7 +40,7 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     # Отправка изображения
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
-        caption=f"Карта парковки на завтра {day.strftime('%d.%m.%Y')}\n\n"
+        caption=f"Карта парковки на завтра {day.strftime('%a %d.%m.%Y')}\n\n"
                 f"🔴 - забронировано\n"
                 f"{'🟡 - забронировано Вами\n' if is_private else ''}"
                 f"🟢 - свободно"
@@ -80,7 +80,7 @@ async def map_command(message: Message, session, driver, current_day, is_private
     # Отправка изображения
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
-        caption=f"Карта парковки на {current_day.strftime('%d.%m.%Y')}.\n"
+        caption=f"Карта парковки на {current_day.strftime('%a %d.%m.%Y')}.\n"
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')})\n\n"
                 f"🔴 - забронировано\n"
                 f"{'🟡 - забронировано Вами\n' if is_private else ''}"

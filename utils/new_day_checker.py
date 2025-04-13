@@ -51,7 +51,7 @@ async def check_current_day(bot, session, param_service):
     notification_sender = NotificationSender(bot)
     for driver in drivers:
         if await notification_sender.send_to_driver(EventType.NEW_DAY, driver, driver,
-                                                    my_date=current_day.strftime('%d.%m.%Y')):
+                                                    my_date=current_day.strftime('%a %d.%m.%Y')):
             content, builder = await get_status_message(driver, True, session, current_day)
             await bot.send_message(driver.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
             await asyncio.sleep(0.1)
