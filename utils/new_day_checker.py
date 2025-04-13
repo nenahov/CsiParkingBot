@@ -9,6 +9,7 @@ from services.notification_sender import NotificationSender, EventType
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
+from services.weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,12 @@ async def check_current_day(bot, session, param_service):
     await param_service.set_parameter("current_day", current_day_str)
     await session.commit()
 
+    weather = await WeatherService().get_weather_content(current_day)
+    # уведомляем всех водителей
     notification_sender = NotificationSender(bot)
     for driver in drivers:
         if await notification_sender.send_to_driver(EventType.NEW_DAY, driver, driver,
+                                                    add_message=weather,
                                                     my_date=current_day.strftime('%a %d.%m.%Y')):
             content, builder = await get_status_message(driver, True, session, current_day)
             await bot.send_message(driver.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())

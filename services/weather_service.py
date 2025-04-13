@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 import requests
-from aiogram.utils.formatting import Bold, Italic
+from aiogram.utils.formatting import Bold, Italic, Code
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +46,10 @@ class WeatherService:
             if date == day_request:
                 is_ok = True
                 time = forecast["dt_txt"].split()[1][:5]
-                temp = int(forecast["main"]["temp"])
+                temp = str(int(forecast["main"]["temp"])).rjust(3, " ")
                 desc = forecast["weather"][0]["description"]
                 icon = forecast["weather"][0]["icon"][:2]
-                content += f"\n{time}: \t{temp}°C, \t{weather_map.get(icon, "")} {desc}"
+                content += Code(f"\n{time} {temp}°C {weather_map.get(icon, "")} {desc}")
         if not is_ok:
             content += Italic("\nСервис временно недоступен 🤷")
         return content
@@ -78,10 +78,10 @@ class WeatherService:
 
             for forecast in forecast_by_date[day_str]:
                 time_str = forecast["dt_txt"].split()[1][:5]
-                temp = int(forecast["main"]["temp"])
+                temp = str(int(forecast["main"]["temp"])).rjust(3, " ")
                 desc = forecast["weather"][0]["description"]
                 icon = forecast["weather"][0]["icon"][:2]
-                day_content += f"\n{time_str}:\t{temp}°C,\t{weather_map.get(icon, '')} {desc}"
+                day_content += Code(f"\n{time_str} {temp}°C {weather_map.get(icon, '')} {desc}")
                 is_ok = True
 
             content += day_content + "\n\n"

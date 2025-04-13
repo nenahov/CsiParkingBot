@@ -3,6 +3,7 @@ from enum import Enum as PyEnum
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, CallbackQuery
+from aiogram.utils.formatting import Text
 
 from models.driver import Driver
 
@@ -56,7 +57,7 @@ class NotificationSender:
 
     async def send_to_driver(self, event_type: EventType,
                              driver_from: Driver, driver_to: Driver,
-                             add_message: str = "",
+                             add_message=None,
                              spot_id: int = 0, karma_change: int = 0, my_date: str = None,
                              keyboard: InlineKeyboardMarkup = None) -> bool:
         """Отправка уведомления водителю с опциональной клавиатурой."""
@@ -66,18 +67,16 @@ class NotificationSender:
             return False
         is_woman = driver_from.attributes.get("gender", "M") == "F"
         suffix = "а" if is_woman else ""
-        message = event_type.value["text"].format(spot_id=spot_id, driver_from=driver_from, driver_to=driver_to,
+        message = Text()
+        message += event_type.value["text"].format(spot_id=spot_id, driver_from=driver_from, driver_to=driver_to,
                                                   karma_change=karma_change, suffix=suffix, my_date=my_date)
         if add_message is not None and add_message != "":
-            message += "\n\n" + add_message
-        logger.info(f"{driver_from.title} -> {driver_to.title}: {message}")
+            message += "\n\n"
+            message += add_message
+        logger.info(f"{driver_from.title} -> {driver_to.title}: {message.as_pretty_string(True)}")
         try:
-            await self.send_notification(driver_to.chat_id, message, keyboard)
+            await self.bot.send_message(chat_id=driver_to.chat_id, **message.as_kwargs(), reply_markup=keyboard)
             return True
         except Exception as e:
             logger.error(f"Error sending notification to {driver_to.title}: {e}")
             return False
-
-    async def send_notification(self, user_id: int, message: str, keyboard: InlineKeyboardMarkup = None):
-        """Отправка уведомления пользователю с опциональной клавиатурой."""
-        await self.bot.send_message(chat_id=user_id, text=message, reply_markup=keyboard)
