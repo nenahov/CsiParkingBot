@@ -28,5 +28,5 @@ class DriverService:
     async def get_top_karma_drivers(self, limit: int = 10) -> Sequence[Driver]:
         return await self.dao.get_top_karma_drivers(limit)
 
-    async def get_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
-        return await self.dao.get_partner_drivers(driver_id, target_date)
+    async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
+        return await self.dao.get_active_partner_drivers(driver_id, target_date)

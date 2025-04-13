@@ -11,7 +11,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers.driver_callback import MyCallback, add_button
-from handlers.queue_handlers import join_queue, leave_queue
 from models.driver import Driver
 from models.parking_spot import SpotStatus
 from services.driver_service import DriverService
@@ -185,7 +184,7 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
-    partners = await DriverService(session).get_partner_drivers(driver.id, date)
+    partners = await DriverService(session).get_active_partner_drivers(driver.id, date)
     notification_sender = NotificationSender(event.bot)
     for spot in current_spots:
         await session.refresh(spot, ["drivers"])
@@ -307,7 +306,7 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
     await callback.answer(f"Вы заняли место 🅿️ {spot.id}.\n\nНе забудьте его освободить, если уезжаете не поздно 🫶",
                           show_alert=True)
     await show_status_callback(callback, session, driver, current_day, is_private)
-    partners = await DriverService(session).get_partner_drivers(driver.id, current_day)
+    partners = await DriverService(session).get_active_partner_drivers(driver.id, current_day)
     notification_sender = NotificationSender(callback.bot)
     for owner in spot.drivers:
         if owner.id != driver.id:
@@ -351,15 +350,3 @@ async def top_karma(message: Message, session: AsyncSession, driver: Driver, cur
     await message.reply(**content.as_kwargs())
 
 
-@router.callback_query(MyCallback.filter(F.action == "leave-queue"),
-                       flags={"check_driver": True, "check_callback": True})
-async def leave_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    await leave_queue(callback, session, driver)
-    await show_status_callback(callback, session, driver, current_day, is_private)
-
-
-@router.callback_query(MyCallback.filter(F.action == "join-queue"),
-                       flags={"check_driver": True, "check_callback": True})
-async def join_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
-    await join_queue(callback, session, driver)
-    await show_status_callback(callback, session, driver, current_day, is_private)

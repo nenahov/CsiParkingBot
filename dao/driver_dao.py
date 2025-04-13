@@ -76,7 +76,7 @@ class DriverDAO:
             .limit(limit))
         return result.scalars().all()
 
-    async def get_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
+    async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
         """
         Возвращает список водителей, имеющих общие парковочные места с заданным водителем,
         исключая самого водителя.
@@ -100,11 +100,12 @@ class DriverDAO:
             .join(Driver.parking_spots)
             .where(and_(ParkingSpot.id.in_(parking_spot_ids),
                         Driver.id != driver_id,
-                        Driver.enabled.is_(True)),
-                   or_(
-                       Driver.absent_until.is_(None),
-                       Driver.absent_until <= target_date
-                   ))
+                        Driver.enabled.is_(True),
+                        or_(
+                            Driver.absent_until.is_(None),
+                            Driver.absent_until <= target_date
+                        ))
+                   )
             .distinct()  # Чтобы избежать дублей, если водитель встречается в нескольких парковках
         )
         result = await self.session.execute(stmt)

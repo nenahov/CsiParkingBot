@@ -92,7 +92,7 @@ class QueueService:
             q.choose_before = choose_before
 
             builder = InlineKeyboardBuilder()
-            add_button(f"⚪️ {spot.id}", "occupy-spot-from-queue", q.driver.chat_id, builder, spot.id)
+            add_button(f"Занять ⚪️ {spot.id}", "occupy-spot-from-queue", q.driver.chat_id, builder, spot.id)
             add_button("✋ Покинуть очередь", "leave-queue", q.driver.chat_id, builder)
             builder.adjust(1)
             logger.info(
