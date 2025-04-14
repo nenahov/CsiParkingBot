@@ -51,6 +51,10 @@ async def set_alarms(event, callback_data: MyCallback, session, driver: Driver, 
 @router.callback_query(MyCallback.filter(F.action == "test-alarms"),
                        flags={"check_driver": True, "check_callback": True})
 async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    await NotificationSender(event.bot).send_to_driver(EventType[callback_data.event_type], driver, driver, "",
+    test_driver = Driver()
+    test_driver.title = "ФИО_водителя"
+    test_driver.description = "ФИО_водителя"
+    test_driver.attributes = {}
+    await NotificationSender(event.bot).send_to_driver(EventType[callback_data.event_type], test_driver, driver, "",
                                                        0, 0, current_day.strftime('%a %d.%m.%Y'))
     await event.answer()
