@@ -73,7 +73,7 @@ class NotificationSender:
         if add_message is not None and add_message != "":
             message += "\n\n"
             message += add_message
-        logger.info(f"{driver_from.title} -> {driver_to.title}: {message.as_pretty_string(True)}")
+        logger.info(f"{driver_from.title} -> {driver_to.title}: {message.as_markdown()}")
         try:
             await self.bot.send_message(chat_id=driver_to.chat_id, **message.as_kwargs(), reply_markup=keyboard)
             return True
