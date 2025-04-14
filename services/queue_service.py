@@ -86,40 +86,42 @@ class QueueService:
             await self.raffle_off_spot_among_filtered_queue(bot, now, spot, queue, spots, queue)
 
     async def raffle_off_spot_among_filtered_queue(self, bot, now, spot, filtered_queue, spots, queue):
-        while filtered_queue:
-            # Выбираем случайного человека из очереди и случайное свободное место
-            add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
-            q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0))
-                                                        for q in filtered_queue], k=1)[0]
+        if not filtered_queue:
+            return
 
-            # Обновляем данные для выбранного элемента очереди:
-            q.spot_id = spot.id
-            # к текущему времени добавляем 10 минут, но если получившиеся время от 19:00 до 09:00 следующего дня, то ставим 09:00 следующего дня
-            choose_before = datetime.now() + timedelta(minutes=10)
-            if choose_before.hour >= 19:
-                choose_before = datetime.combine(now.date() + timedelta(days=1), time(9, 0))
-            elif choose_before.hour < 8 or (choose_before.hour == 8 and choose_before.minute < (60 - 10)):
-                choose_before = datetime.combine(now.date(), time(9, 0))
-            q.choose_before = choose_before
+        # Выбираем случайного человека из очереди и случайное свободное место
+        add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
+        q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0))
+                                                    for q in filtered_queue], k=1)[0]
 
-            builder = InlineKeyboardBuilder()
-            add_button(f"Занять ⚪️ {spot.id}", "occupy-spot-from-queue", q.driver.chat_id, builder, spot.id)
-            add_button("✋ Покинуть очередь", "leave-queue", q.driver.chat_id, builder)
-            builder.adjust(1)
+        # Обновляем данные для выбранного элемента очереди:
+        q.spot_id = spot.id
+        # к текущему времени добавляем 10 минут, но если получившиеся время от 19:00 до 09:00 следующего дня, то ставим 09:00 следующего дня
+        choose_before = datetime.now() + timedelta(minutes=10)
+        if choose_before.hour >= 19:
+            choose_before = datetime.combine(now.date() + timedelta(days=1), time(9, 0))
+        elif choose_before.hour < 8 or (choose_before.hour == 8 and choose_before.minute < (60 - 10)):
+            choose_before = datetime.combine(now.date(), time(9, 0))
+        q.choose_before = choose_before
+
+        builder = InlineKeyboardBuilder()
+        add_button(f"Занять ⚪️ {spot.id}", "occupy-spot-from-queue", q.driver.chat_id, builder, spot.id)
+        add_button("✋ Покинуть очередь", "leave-queue", q.driver.chat_id, builder)
+        builder.adjust(1)
+        logger.info(
+            f"{q.driver.description} может занять место {q.spot_id} до {q.choose_before.strftime('%d.%m.%Y %H:%M')}")
+        try:
+            # Удаляем выбранного человека
+            filtered_queue.remove(q)
+            if q in queue:
+                queue.remove(q)
+            await bot.send_message(chat_id=q.driver.chat_id,
+                                   text=f"Появилось свободное место: {spot.id}.\n\nНажмите на кнопку с местом до {q.choose_before.strftime('%H:%M')}.",
+                                   reply_markup=builder.as_markup())
+            # Удаляем выбранное место из дальнейшего выбора
+            spots.remove(spot)
+        except Exception as e:
+            q.spot_id = None
+            logger.error(f"Error sending notification to {q.driver.title}: {e}")
             logger.info(
-                f"{q.driver.description} может занять место {q.spot_id} до {q.choose_before.strftime('%d.%m.%Y %H:%M')}")
-            try:
-                # Удаляем выбранного человека
-                filtered_queue.remove(q)
-                if q in queue:
-                    queue.remove(q)
-                await bot.send_message(chat_id=q.driver.chat_id,
-                                       text=f"Появилось свободное место: {spot.id}.\n\nМесто будет доступно до {q.choose_before.strftime('%H:%M')}.",
-                                       reply_markup=builder.as_markup())
-                # Удаляем выбранное место из дальнейшего выбора
-                spots.remove(spot)
-            except Exception as e:
-                q.spot_id = None
-                logger.error(f"Error sending notification to {q.driver.title}: {e}")
-                logger.info(
-                    f"{q.driver.description} не получил уведомление. Место {q.spot_id} будет разыграно заново.")
+                f"{q.driver.description} не получил уведомление. Место {q.spot_id} будет разыграно заново.")
