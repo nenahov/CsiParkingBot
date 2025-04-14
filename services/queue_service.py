@@ -66,7 +66,10 @@ class QueueService:
 
         spots = list(await ParkingService(self.session).get_free_spots(current_week_day, current_day))
 
-        # Сначала оставляем только места, которые еще не участвуют в очереди
+        # Сначала оставляем только места, которые можно брать для очереди (прошел таймаут после действий владельца)
+        spots = [s for s in spots if s.for_queue_after is None or s.for_queue_after <= datetime.now()]
+
+        # Оставляем только места, которые еще не участвуют в очереди
         spots = [s for s in spots if not any(q.spot_id == s.id for q in queue)]
 
         # Потом оставляем только людей, которым еще не предложено место

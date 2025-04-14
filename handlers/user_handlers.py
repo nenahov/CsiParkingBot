@@ -1,7 +1,7 @@
 import asyncio
 import random
 import re
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
@@ -176,8 +176,11 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     # прибавим к сегодня N дней и покажем дату
     date = current_day + timedelta(days=days)
     driver.absent_until = date
-    await session.refresh(driver, ["current_spots"])
+    await session.refresh(driver, ["current_spots", "parking_spots"])
     current_spots = driver.get_occupied_spots()
+    for_queue_after = datetime.now() + (timedelta(minutes=60) if datetime.now().hour >= 19 else timedelta(minutes=10))
+    for spot in driver.my_spots():
+        spot.for_queue_after = for_queue_after
     await ParkingService(session).leave_spot(driver)
     await QueueService(session).leave_queue(driver)
     await send_alarm(event, f"Вы уехали до {date.strftime('%a %d.%m.%Y')}")

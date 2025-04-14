@@ -1,6 +1,6 @@
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, Integer, ForeignKey, Enum
+from sqlalchemy import Column, Integer, ForeignKey, Enum, DateTime
 from sqlalchemy import Table
 from sqlalchemy.orm import relationship
 
@@ -32,6 +32,8 @@ class ParkingSpot(Base):
 
     status = Column(Enum(SpotStatus), default=SpotStatus.FREE)
     current_driver_id = Column(Integer, ForeignKey('drivers.id'))
+
+    for_queue_after = Column(DateTime)
 
     drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots",
                            lazy="selectin")
