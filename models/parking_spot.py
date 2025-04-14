@@ -13,6 +13,7 @@ class SpotStatus(PyEnum):
     OCCUPIED = "occupied"
     OCCUPIED_WITHOUT_DEMAND = "occupied_without_demand"
 
+
 parking_spot_driver_association = Table(
     'parking_spot_driver',
     Base.metadata,
@@ -32,6 +33,7 @@ class ParkingSpot(Base):
     status = Column(Enum(SpotStatus), default=SpotStatus.FREE)
     current_driver_id = Column(Integer, ForeignKey('drivers.id'))
 
-    drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots")
+    drivers = relationship("Driver", secondary=parking_spot_driver_association, back_populates="parking_spots",
+                           lazy="selectin")
     current_driver = relationship("Driver", back_populates="current_spots")
     reservations = relationship("Reservation", back_populates="parking_spot")

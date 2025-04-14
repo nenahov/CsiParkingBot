@@ -2,6 +2,7 @@ from datetime import date
 
 from sqlalchemy import select, update, or_, exists, not_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
@@ -55,22 +56,23 @@ class ParkingSpotDAO:
         # получить места с пустым статусом или со статусом Free
         # и у которых нет резервирования в этот день недели
         result = await self.session.execute(
-            select(ParkingSpot).
-            where(or_(ParkingSpot.status.is_(SpotStatus.FREE),
-                      and_(
-                          ParkingSpot.status.is_(None),
-                          not_(exists(
-                              select(Reservation)
-                              .join(Driver)
-                              .where(and_(Reservation.day_of_week.is_(day_of_week),
-                                          Reservation.parking_spot_id.is_(ParkingSpot.id),
-                                          Driver.enabled == True,
-                                          or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
-                                          )
-                                     )
-                          ))
-                      )
-                      )
-                  )
+            select(ParkingSpot)
+            .options(selectinload(ParkingSpot.drivers))
+            .where(or_(ParkingSpot.status.is_(SpotStatus.FREE),
+                       and_(
+                           ParkingSpot.status.is_(None),
+                           not_(exists(
+                               select(Reservation)
+                               .join(Driver)
+                               .where(and_(Reservation.day_of_week.is_(day_of_week),
+                                           Reservation.parking_spot_id.is_(ParkingSpot.id),
+                                           Driver.enabled == True,
+                                           or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
+                                           )
+                                      )
+                           ))
+                       )
+                       )
+                   )
         )
         return result.scalars().all()

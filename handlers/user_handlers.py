@@ -184,17 +184,17 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
-    partners = await DriverService(session).get_active_partner_drivers(driver.id, date)
+    active_partners = await DriverService(session).get_active_partner_drivers(driver.id, date)
     notification_sender = NotificationSender(event.bot)
     for spot in current_spots:
         await session.refresh(spot, ["drivers"])
         for owner in spot.drivers:
             if owner.id != driver.id:
-                partners.discard(owner)
+                active_partners.discard(owner)
                 if await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0):
                     content, builder = await get_status_message(owner, True, session, current_day)
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
-    for partner in partners:
+    for partner in active_partners:
         if await notification_sender.send_to_driver(EventType.PARTNER_ABSENT, driver, partner,
                                                     my_date=date.strftime('%a %d.%m.%Y')):
             content, builder = await get_status_message(partner, True, session, current_day)

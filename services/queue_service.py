@@ -72,13 +72,22 @@ class QueueService:
         # Потом оставляем только людей, которым еще не предложено место
         queue = [q for q in queue if q.choose_before is None]
 
+        # Разыгрываем места среди владельцев места, которые стоят в очереди
+        for spot in spots:
+            owners_in_queue = [q for q in queue if q.driver_id in [d.id for d in spot.drivers]]
+            await self.raffle_off_spot_among_filtered_queue(bot, now, spot, owners_in_queue, spots, queue)
+
+        # Разыгрываем оставшиеся места среди очереди
         while queue and spots:
+            spot = random.choice(spots)
+            await self.raffle_off_spot_among_filtered_queue(bot, now, spot, queue, spots, queue)
+
+    async def raffle_off_spot_among_filtered_queue(self, bot, now, spot, filtered_queue, spots, queue):
+        while filtered_queue:
             # Выбираем случайного человека из очереди и случайное свободное место
             add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
-            q = random.choices(queue, weights=[max(1,
-                                                   add_weight_karma + q.driver.attributes.get("karma", 0))
-                                               for q in queue], k=1)[0]
-            spot = random.choice(spots)
+            q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0))
+                                                        for q in filtered_queue], k=1)[0]
 
             # Обновляем данные для выбранного элемента очереди:
             q.spot_id = spot.id
@@ -88,7 +97,6 @@ class QueueService:
                 choose_before = datetime.combine(now.date() + timedelta(days=1), time(9, 0))
             elif choose_before.hour < 8 or (choose_before.hour == 8 and choose_before.minute < (60 - 10)):
                 choose_before = datetime.combine(now.date(), time(9, 0))
-
             q.choose_before = choose_before
 
             builder = InlineKeyboardBuilder()
@@ -99,7 +107,9 @@ class QueueService:
                 f"{q.driver.description} может занять место {q.spot_id} до {q.choose_before.strftime('%d.%m.%Y %H:%M')}")
             try:
                 # Удаляем выбранного человека
-                queue.remove(q)
+                filtered_queue.remove(q)
+                if q in queue:
+                    queue.remove(q)
                 await bot.send_message(chat_id=q.driver.chat_id,
                                        text=f"Появилось свободное место: {spot.id}.\n\nМесто будет доступно до {q.choose_before.strftime('%H:%M')}.",
                                        reply_markup=builder.as_markup())
