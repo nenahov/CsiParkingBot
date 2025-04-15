@@ -95,8 +95,8 @@ def generate_carousel_image(current_index: int) -> io.BytesIO:
 
 
 def get_car(current_index):
-    return extract_sprite(cars3, (50 * (current_index % 12), 100 * (current_index % 2),
-                                  50 * (1 + (current_index % 12)), 100 * (1 + (current_index % 2))))
+    return extract_sprite(cars3, (50 * (current_index % 12), 100 * (current_index // 12),
+                                  50 * (1 + (current_index % 12)), 100 * (1 + (current_index // 12))))
 
 
 def extract_sprite(sprite_sheet, sprite_rect):
