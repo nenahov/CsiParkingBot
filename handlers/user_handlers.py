@@ -97,7 +97,10 @@ async def get_status_message(driver, is_private, session, current_day):
 
 async def get_spot_info(spot, reservations, session):
     # ищем всех в reservations
-    res_info = reservations.get(spot.id, [])
+    if isinstance(reservations, list):
+        res_info = reservations
+    else:
+        res_info = reservations.get(spot.id, [])
 
     if len(res_info) < 1:
         res = "Свободно"
@@ -354,3 +357,12 @@ async def top_karma(message: Message, session: AsyncSession, driver: Driver, cur
     await message.reply(**content.as_kwargs())
 
 
+@router.message(F.text.regexp(r"(?i).*инфо.*мест.* (\d+)").as_("match"), flags={"check_driver": True})
+async def check_spot(message: Message, session: AsyncSession, current_day, match: re.Match):
+    spot_id = int(match.group(1))  # Извлекаем номер места
+    spot = await ParkingService(session).get_spot_by_id(spot_id)
+    if not spot:
+        await send_reply(message, Text(f"❌ Место {spot_id} не найдено"), InlineKeyboardBuilder())
+        return
+    reservations = await ReservationService(session).get_spot_reservations(spot_id, current_day.weekday())
+    await send_reply(message, Text(await get_spot_info(spot, reservations, session)), InlineKeyboardBuilder())
