@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
+from utils.cars_generator import get_car
 
 # Цвета для разных статусов
 COLORS = {
@@ -36,6 +37,12 @@ dx = -28
 dy = -16
 d_width = -1
 
+cars = Image.open("./pics/cars.png").convert("RGBA")
+# cars2 = Image.open("./pics/cars2.png").convert("RGBA")
+# cars3 = Image.open("./pics/cars3.png").convert("RGBA")
+# img = Image.new('RGB', (800, 600), (255, 255, 255))
+parking_img = Image.open("./pics/parking.png")
+
 try:
     font = ImageFont.truetype("arial.ttf", 12)
 except:
@@ -47,13 +54,7 @@ def generate_parking_map(parking_spots,
                          driver: Driver,
                          use_spot_status: bool = True,
                          frame_index: int = None):
-    # img = Image.new('RGB', (800, 600), (255, 255, 255))
-    img = Image.open("./pics/parking.png")
-    cars = Image.open("./pics/cars.png").convert("RGBA")
-    # cars2 = Image.open("./pics/cars2.png").convert("RGBA")
-    cars3 = Image.open("./pics/cars3.png").convert("RGBA")
-
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
 
     try:
         font = ImageFont.truetype("arial.ttf", 8)
@@ -111,8 +112,8 @@ def generate_parking_map(parking_spots,
             else:
                 car_index = spot.current_driver_id
 
-            car_image = extract_sprite(cars3, (50 * (car_index % 12), 100 * (car_index % 2),
-                                               50 * (1 + (car_index % 12)), 100 * (1 + (car_index % 2))))
+            car_image = get_car(car_index)
+
             scale = 0.8
             if scale != 1:
                 new_size = (int(car_image.width * scale), int(car_image.height * scale))
@@ -136,9 +137,9 @@ def generate_parking_map(parking_spots,
         overlay.paste(garbage_truck, (frame[0] + random.randint(-5, 5), frame[1] + random.randint(0, 5)),
                       mask=garbage_truck)
 
-    img = Image.alpha_composite(img, overlay)
+    result = Image.alpha_composite(parking_img, overlay)
 
-    return img
+    return result
 
 
 def get_status(driver: Driver, reservations_data, spot: ParkingSpot, use_spot_status: bool):

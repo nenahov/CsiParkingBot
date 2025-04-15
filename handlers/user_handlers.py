@@ -62,6 +62,7 @@ async def get_status_message(driver, is_private, session, current_day):
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
         add_button("🛎️ Настройки уведомлений...", "edit-alarms", driver.chat_id, builder)
+        add_button("🚜 Выбрать аватар...", "edit-avatar", driver.chat_id, builder)
 
     if occupied_spots or is_absent:
         builder.adjust(1)

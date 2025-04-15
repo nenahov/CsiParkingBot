@@ -1,11 +1,12 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile, InputMediaPhoto
 from aiogram.utils.formatting import Text, Bold, as_key_value
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
-from services.notification_sender import send_reply, EventType, NotificationSender
+from services.notification_sender import send_reply, EventType, NotificationSender, send_alarm
+from utils.cars_generator import generate_carousel_image, cars_count
 
 router = Router()
 
@@ -13,12 +14,12 @@ router = Router()
 @router.callback_query(MyCallback.filter(F.action == "edit-alarms"),
                        flags={"check_driver": True, "check_callback": True})
 async def edit_alarms(event, session, driver: Driver):
-    builder = InlineKeyboardBuilder()
     content = Text(Bold("🛎️ Настройки уведомлений:"))
     # content += '\n\n'
     # content += Bold("✅ - уведомление приходит,\n❌ - уведомление не приходит")
     content += '\n\n'
     disabled_events = driver.attributes.get("disabled_events", [])
+    builder = InlineKeyboardBuilder()
     for event_type in EventType:
         is_on = event_type.name not in disabled_events
         content += ('✅ ' if is_on else '❌ ')
@@ -58,3 +59,67 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
     await NotificationSender(event.bot).send_to_driver(EventType[callback_data.event_type], test_driver, driver, "",
                                                        0, 0, current_day.strftime('%a %d.%m.%Y'))
     await event.answer()
+
+
+@router.callback_query(MyCallback.filter(F.action == "edit-avatar"),
+                       flags={"check_driver": True, "check_callback": True})
+async def edit_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    current_index = driver.attributes.get("car_index", driver.id)
+    photo = generate_carousel_image(current_index)
+    await event.message.answer_photo(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+                                     photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
+                                     reply_markup=get_carousel_keyboard(current_index, driver.chat_id))
+    await event.answer()
+
+
+@router.callback_query(MyCallback.filter(F.action == "set-avatar"),
+                       flags={"check_driver": True, "check_callback": True})
+async def set_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    driver.attributes["car_index"] = callback_data.spot_id
+    await send_alarm(event, "🚜 Аватар успешно установлен")
+
+
+@router.callback_query(F.data.startswith("carousel:"), flags={"check_driver": True})
+async def carousel_callback(event: CallbackQuery, driver: Driver):
+    """
+    Обрабатывает нажатия на кнопки "⬅️" и "➡️".
+    Из callback data определяется направление и вычисляется новый индекс,
+    после чего обновляется изображение и клавиатура.
+    """
+    try:
+        _, index_str, direction = event.data.split(":")
+        current_index = int(index_str)
+    except ValueError:
+        await event.answer("Ошибка данных!", show_alert=True)
+        return
+
+    new_index = (current_index + int(direction)) % cars_count
+
+    photo = generate_carousel_image(new_index)
+    try:
+        await event.message.edit_media(
+            media=InputMediaPhoto(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+                                  media=BufferedInputFile(photo.getvalue(), filename="carousel.png")),
+            reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
+    except Exception as e:
+        # Если редактирование сообщения не удалось, отправляем новое фото
+        await event.message.answer_photo(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+                                         photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
+                                         reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
+
+    await event.answer()
+
+
+def get_carousel_keyboard(current_index: int, chat_id: int) -> InlineKeyboardMarkup:
+    """
+    Создает инлайн-клавиатуру для навигации карусели с кнопками "⬅️" и "➡️".
+    Callback data хранит текущий индекс и направление смены.
+    """
+    builder = InlineKeyboardBuilder()
+    builder.add(InlineKeyboardButton(text="⬅️", callback_data=f"carousel:{current_index}:-1"))
+    builder.add(InlineKeyboardButton(text="➡️", callback_data=f"carousel:{current_index}:1"))
+    builder.add(InlineKeyboardButton(text="⬅️⬅️⬅️", callback_data=f"carousel:{current_index}:-3"))
+    builder.add(InlineKeyboardButton(text="➡️➡️➡️", callback_data=f"carousel:{current_index}:3"))
+    add_button("☑️ Выбрать этот аватар", "set-avatar", chat_id, builder, spot_id=current_index)
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
