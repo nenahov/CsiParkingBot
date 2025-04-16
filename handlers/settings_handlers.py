@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile, InputMediaPhoto
-from aiogram.utils.formatting import Text, Bold, as_key_value
+from aiogram.utils.formatting import Text, Bold, as_key_value, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
@@ -9,6 +9,24 @@ from services.notification_sender import send_reply, EventType, NotificationSend
 from utils.cars_generator import generate_carousel_image, cars_count
 
 router = Router()
+
+
+@router.callback_query(MyCallback.filter(F.action == "settings"),
+                       flags={"check_driver": True, "check_callback": True})
+async def show_settings_menu(event, session, driver: Driver):
+    content = Text(Bold("Выберите, что хотите настроить:"))
+    content += '\n\n'
+    content += as_list(as_key_value("📅 Расписание", "Бронирование места по дням недели;"),
+                       as_key_value("🛎️ Настройки уведомлений", "Включение/выключение уведомлений;"),
+                       as_key_value("🚜 Выбрать аватар",
+                                    "Выбор модельки Вашей машины, которая будет отображаться на карте, когда Вы приехали."))
+    builder = InlineKeyboardBuilder()
+    add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
+    add_button("🛎️ Настройки уведомлений...", "edit-alarms", driver.chat_id, builder)
+    add_button("🚜 Выбрать аватар...", "edit-avatar", driver.chat_id, builder)
+    add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
+    builder.adjust(1)
+    await send_reply(event, content, builder)
 
 
 @router.callback_query(MyCallback.filter(F.action == "edit-alarms"),

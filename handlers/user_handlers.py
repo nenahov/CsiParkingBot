@@ -45,29 +45,32 @@ async def get_status_message(driver, is_private, session, current_day):
     in_queue = await QueueService(session).is_driver_in_queue(driver)
 
     builder = InlineKeyboardBuilder()
+    keyboard_sizes = []
+    if driver.attributes.get("plus", -1) > -1:
+        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
+        keyboard_sizes.append(1)
     if is_absent:
         add_button("🏎️ Вернулся раньше...", "comeback", driver.chat_id, builder)
+        keyboard_sizes.append(1)
     else:
         if occupied_spots:
             add_button("🫶 Уехал", "absent", driver.chat_id, builder)
+            keyboard_sizes.append(1)
         else:
             add_button("🚗 Приеду...", "comeback", driver.chat_id, builder)
             add_button("🫶 Не приеду", "absent", driver.chat_id, builder)
+            keyboard_sizes.append(2)
         if in_queue:
             add_button("✋ Покинуть очередь", "leave-queue", driver.chat_id, builder)
+            keyboard_sizes.append(1)
             # А встать в очередь можно только через меню, когда хочешь приехать
 
-    if driver.attributes.get("plus", -1) > -1:
-        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
-    if is_private:
-        add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
-        add_button("🛎️ Настройки уведомлений...", "edit-alarms", driver.chat_id, builder)
-        add_button("🚜 Выбрать аватар...", "edit-avatar", driver.chat_id, builder)
 
-    if occupied_spots or is_absent:
-        builder.adjust(1)
-    else:
-        builder.adjust(2, 1)
+    if is_private:
+        add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
+        keyboard_sizes.append(1)
+
+    builder.adjust(*keyboard_sizes)
 
     content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
                    f"{driver.description}", '\n\n')
@@ -261,7 +264,7 @@ async def comeback_driver(driver, event, session, current_day):
                         allow_queue = False
                     else:
                         pref = "🔴"
-                add_button(f"Занять {pref} {spot.id}", "occupy-my-spot", driver.chat_id, builder, spot.id)
+                add_button(f"Занять {pref} {spot.id}", "try-occupy-my-spot", driver.chat_id, builder, spot.id)
             sizes = [len(driver.my_spots()), 1]
 
         # потом вступаем в очередь
@@ -276,6 +279,24 @@ async def comeback_driver(driver, event, session, current_day):
     builder.adjust(*sizes)
     await send_reply(event, content, builder)
 
+
+@router.callback_query(MyCallback.filter(F.action == "try-occupy-my-spot"),
+                       flags={"check_driver": True, "check_callback": True})
+async def try_occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver,
+                                   current_day, is_private) -> None:
+    reservations = await ReservationService(session).get_spot_reservations(callback_data.spot_id, current_day.weekday())
+    if not reservations or any(res.driver.id == driver.id for res in reservations):
+        await occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue=False)
+    else:
+        content = Bold(f"🚫 Место {callback_data.spot_id} забронировано другим водителем")
+        content += "\n\n"
+        content += "Вы точно хотите занять его?"
+        builder = InlineKeyboardBuilder()
+        add_button(f"⚠️ Да, занять место {callback_data.spot_id}", "occupy-my-spot", driver.chat_id, builder,
+                   callback_data.spot_id)
+        add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
+        builder.adjust(1)
+        await send_reply(callback, content, builder)
 
 @router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),
                        flags={"check_driver": True, "check_callback": True})
