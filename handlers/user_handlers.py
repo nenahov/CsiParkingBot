@@ -36,9 +36,15 @@ async def show_status_callback(callback: CallbackQuery, session, driver, current
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
-async def get_status_message(driver, is_private, session, current_day):
+async def get_status_message(driver: Driver, is_private, session, current_day):
     await session.commit()
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
+    if datetime.now().date() != current_day:
+        ts = ' завтра'
+        on_ts = ' на завтра'
+    else:
+        ts = ''
+        on_ts = ''
     is_absent = driver.is_absent(current_day)
     occupied_spots = driver.get_occupied_spots()
     spots, reservations = await ParkingService(session).get_spots_with_reservations(current_day)
@@ -57,14 +63,18 @@ async def get_status_message(driver, is_private, session, current_day):
             add_button("🫶 Уехал", "absent", driver.chat_id, builder)
             keyboard_sizes.append(1)
         else:
-            add_button("🚗 Приеду...", "comeback", driver.chat_id, builder)
-            add_button("🫶 Не приеду", "absent", driver.chat_id, builder)
+            add_button(f"🚗 Приеду{ts}...", "comeback", driver.chat_id, builder)
+            add_button(f"🫶 Не приеду", "absent", driver.chat_id, builder)
             keyboard_sizes.append(2)
+            if not in_queue:
+                if not any(res.day_of_week == current_day.weekday() for res in driver.reservations):
+                    add_button(f"🙋 Встать в очередь{on_ts}", "join-queue", driver.chat_id, builder)
+                    keyboard_sizes.append(1)
+
         if in_queue:
-            add_button("✋ Покинуть очередь", "leave-queue", driver.chat_id, builder)
+            add_button(f"✋ Покинуть очередь{on_ts}", "leave-queue", driver.chat_id, builder)
             keyboard_sizes.append(1)
             # А встать в очередь можно только через меню, когда хочешь приехать
-
 
     if is_private:
         add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
@@ -107,10 +117,10 @@ async def get_spot_info(spot, reservations, session):
 
     if len(res_info) < 1:
         res = "Свободно"
-        res_old = "Не было брони"
+        res_old = "не было брони"
     else:
         res = "Бронь у " + ', '.join(res.driver.title for res in res_info)
-        res_old = "Была бронь у " + ', '.join(res.driver.title for res in res_info)
+        res_old = "была бронь у " + ', '.join(res.driver.title for res in res_info)
 
     await session.refresh(spot, ["current_driver"])
     is_woman = spot.current_driver and spot.current_driver.attributes.get("gender", "M") == "F"
@@ -304,6 +314,7 @@ async def try_occupy_spot_callback(callback: CallbackQuery, callback_data: MyCal
     builder.adjust(1)
     await send_reply(callback, content, builder)
 
+
 @router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),
                        flags={"check_driver": True, "check_callback": True})
 async def occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver,
@@ -335,7 +346,7 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
             await queue_service.join_queue(driver)
         await callback.answer(
             f"❌ Место занято: {spot.current_driver.description} {"\n\n Вы все ещё в очереди." if in_queue else ''}",
-                              show_alert=True)
+            show_alert=True)
         return
     await parking_service.occupy_spot(driver, callback_data.spot_id)
     await queue_service.leave_queue(driver)

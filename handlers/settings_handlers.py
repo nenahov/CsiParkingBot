@@ -18,12 +18,12 @@ async def show_settings_menu(event, session, driver: Driver):
     content += '\n\n'
     content += as_list(as_key_value("📅 Расписание", "Бронирование места по дням недели;"),
                        as_key_value("🛎️ Настройки уведомлений", "Включение/выключение уведомлений;"),
-                       as_key_value("🚜 Выбрать аватар",
+                       as_key_value("🏎️ Выбрать аватар",
                                     "Выбор модельки Вашей машины, которая будет отображаться на карте, когда Вы приехали."))
     builder = InlineKeyboardBuilder()
     add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
     add_button("🛎️ Настройки уведомлений...", "edit-alarms", driver.chat_id, builder)
-    add_button("🚜 Выбрать аватар...", "edit-avatar", driver.chat_id, builder)
+    add_button("🏎️ Выбрать аватар...", "edit-avatar", driver.chat_id, builder)
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
     await send_reply(event, content, builder)
@@ -84,7 +84,7 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
 async def edit_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
     current_index = driver.attributes.get("car_index", driver.id)
     photo = generate_carousel_image(current_index)
-    await event.message.answer_photo(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+    await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                      photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
                                      reply_markup=get_carousel_keyboard(current_index, driver.chat_id))
     await event.answer()
@@ -94,7 +94,7 @@ async def edit_avatar(event: CallbackQuery, callback_data: MyCallback, session, 
                        flags={"check_driver": True, "check_callback": True})
 async def set_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
     driver.attributes["car_index"] = callback_data.spot_id
-    await send_alarm(event, "🚜 Аватар успешно установлен")
+    await send_alarm(event, "🏎️ Аватар успешно установлен")
 
 
 @router.callback_query(F.data.startswith("carousel:"), flags={"check_driver": True})
@@ -116,12 +116,12 @@ async def carousel_callback(event: CallbackQuery, driver: Driver):
     photo = generate_carousel_image(new_index)
     try:
         await event.message.edit_media(
-            media=InputMediaPhoto(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+            media=InputMediaPhoto(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                   media=BufferedInputFile(photo.getvalue(), filename="carousel.png")),
             reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
     except Exception as e:
         # Если редактирование сообщения не удалось, отправляем новое фото
-        await event.message.answer_photo(caption="🚜 Выберите свой аватар:", show_caption_above_media=True,
+        await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                          photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
                                          reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
 
