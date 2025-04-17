@@ -284,19 +284,25 @@ async def comeback_driver(driver, event, session, current_day):
                        flags={"check_driver": True, "check_callback": True})
 async def try_occupy_spot_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver,
                                    current_day, is_private) -> None:
+    spot = await ParkingService(session).get_spot_by_id(callback_data.spot_id)
+    if spot.status is not None:
+        await occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue=False)
+        return
+
     reservations = await ReservationService(session).get_spot_reservations(callback_data.spot_id, current_day.weekday())
     if not reservations or any(res.driver.id == driver.id for res in reservations):
         await occupy_spot(callback, callback_data, current_day, driver, is_private, session, check_queue=False)
-    else:
-        content = Bold(f"🚫 Место {callback_data.spot_id} забронировано другим водителем")
-        content += "\n\n"
-        content += "Вы точно хотите занять его?"
-        builder = InlineKeyboardBuilder()
-        add_button(f"⚠️ Да, занять место {callback_data.spot_id}", "occupy-my-spot", driver.chat_id, builder,
-                   callback_data.spot_id)
-        add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
-        builder.adjust(1)
-        await send_reply(callback, content, builder)
+        return
+
+    content = Bold(f"🚫 Место {callback_data.spot_id} забронировано другим водителем")
+    content += "\n\n"
+    content += "Вы точно хотите занять его?"
+    builder = InlineKeyboardBuilder()
+    add_button(f"⚠️ Да, занять место {callback_data.spot_id}", "occupy-my-spot", driver.chat_id, builder,
+               callback_data.spot_id)
+    add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
+    builder.adjust(1)
+    await send_reply(callback, content, builder)
 
 @router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),
                        flags={"check_driver": True, "check_callback": True})
@@ -323,10 +329,12 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
             await callback.answer("❌ Вы не можете занять это место!", show_alert=True)
             return
     if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
-        if await queue_service.is_driver_in_queue(driver):
+        in_queue = await queue_service.is_driver_in_queue(driver)
+        if in_queue:
             await queue_service.leave_queue(driver)
             await queue_service.join_queue(driver)
-        await callback.answer(f"❌ Место занято: {spot.current_driver.description}\n\n Вы все ещё в очереди.",
+        await callback.answer(
+            f"❌ Место занято: {spot.current_driver.description} {"\n\n Вы все ещё в очереди." if in_queue else ''}",
                               show_alert=True)
         return
     await parking_service.occupy_spot(driver, callback_data.spot_id)
