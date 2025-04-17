@@ -3,6 +3,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 
+from config import constants
 from handlers.user_handlers import get_status_message
 from services.driver_service import DriverService
 from services.notification_sender import NotificationSender, EventType
@@ -16,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def check_current_day(bot, session, param_service):
     # Получаем текущий день
-    new_day_offset = await param_service.get_parameter("new_day_offset", "5")
-    current_day = (datetime.now() + timedelta(hours=int(new_day_offset))).date()
+    current_day = (datetime.now() + timedelta(hours=int(constants.new_day_offset))).date()
 
     current_day_str = current_day.strftime('%d.%m.%Y')
     old_day = await param_service.get_parameter("current_day")
@@ -43,7 +43,7 @@ async def check_current_day(bot, session, param_service):
 
     drivers = await driver_service.get_all()
     for driver in drivers:
-        driver.attributes["plus"] = random.randint(0, 100)
+        driver.attributes["plus"] = random.randint(1, 100)
 
     # устанавливаем текущий день
     await param_service.set_parameter("current_day", current_day_str)
@@ -61,3 +61,34 @@ async def check_current_day(bot, session, param_service):
             await asyncio.sleep(0.1)
 
     return current_day
+
+
+async def check_auto_karma_for_absent(bot, session, param_service, current_day):
+    hour = datetime.now().hour
+    if hour >= constants.new_day_begin_hour or hour < constants.new_day_auto_karma_hour:
+        return
+
+    old_day = await param_service.get_parameter("current_day_auto_karma")
+    current_day_str = current_day.strftime('%d.%m.%Y')
+    if old_day and old_day == current_day_str:
+        return
+
+    await param_service.set_parameter("current_day_auto_karma", current_day_str)
+    await session.commit()
+
+    driver_service = DriverService(session)
+    drivers = await driver_service.get_absent_drivers_for_auto_karma()
+    for driver in drivers:
+        try:
+            await bot.send_message(chat_id=driver.chat_id, text="🎲 Вы не нажали на Розыгрыш кармы сегодня."
+                                                                "\n\n🫶 Но т.к. Вы уехали, мы сделаем это за Вас!")
+            data = await bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
+            driver.attributes["plus"] = -1
+            driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
+            await  bot.send_message(chat_id=driver.chat_id,
+                                    text=f"💟 Вы получили +{data.dice.value} в карму. /status"
+                                         f"\n\nЗавтра будет шанс получить еще.")
+            logger.info(f"Авторозыгрыш кармы для {driver.description}: +{data.dice.value}")
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Ошибка авторозыгрыша кармы для {driver.description}: {e}")

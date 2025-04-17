@@ -10,6 +10,7 @@ from aiogram.utils.formatting import Text, TextLink, Bold, as_marked_section, as
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import constants
 from handlers.driver_callback import MyCallback, add_button
 from models.driver import Driver
 from models.parking_spot import SpotStatus
@@ -39,7 +40,7 @@ async def show_status_callback(callback: CallbackQuery, session, driver, current
 async def get_status_message(driver: Driver, is_private, session, current_day):
     await session.commit()
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
-    if datetime.now().date() != current_day:
+    if datetime.today() != current_day:
         ts = ' завтра'
         on_ts = ' на завтра'
     else:
@@ -195,7 +196,10 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     driver.absent_until = date
     await session.refresh(driver, ["current_spots", "parking_spots"])
     current_spots = driver.get_occupied_spots()
-    for_queue_after = datetime.now() + (timedelta(minutes=60) if datetime.now().hour >= 19 else timedelta(minutes=10))
+    for_queue_after = (datetime.now() +
+                       (timedelta(
+                           minutes=constants.timeout_before_midnight) if datetime.now().hour >= constants.new_day_begin_hour
+                        else timedelta(minutes=constants.timeout_after_midnight)))
     for spot in driver.my_spots():
         spot.for_queue_after = for_queue_after
     await ParkingService(session).leave_spot(driver)

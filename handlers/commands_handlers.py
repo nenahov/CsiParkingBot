@@ -6,6 +6,8 @@ from aiogram.utils.formatting import as_list, as_marked_section, Bold, as_key_va
     Italic
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from config import constants
+
 router = Router()
 
 
@@ -31,7 +33,7 @@ async def main_commands(message, is_new: bool):
             marker="• ",
         ),
         as_marked_section(
-            Bold("В 19:00:"),
+            Bold(f"В {constants.new_day_begin_hour}:00:"),
             "Все парковочные места освобождаются.",
             "Очередь на свободные места очищается.",
             "Начинается прием заявок на свободные места на следующий день.",
@@ -51,7 +53,7 @@ async def main_commands(message, is_new: bool):
             marker="• ",
         ),
         as_marked_section(
-            Bold("Начиная с 21:00:"),
+            Bold(f"Начиная с {constants.new_day_queue_hour}:00:"),
             "Свободные места разыгрываются между теми, кто стоит в очереди.",
             "Вероятность получения места зависит от вашей Кармы 🫶.",
             "Вы получите уведомление с предложением занять выпавшее место.",

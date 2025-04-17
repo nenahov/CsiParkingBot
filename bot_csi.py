@@ -18,7 +18,7 @@ from middlewares.my_callback_check import MyCallbackCheckMiddleware
 from middlewares.new_day_check import NewDayCheckMiddleware
 from services.param_service import ParamService
 from services.queue_service import QueueService
-from utils.new_day_checker import check_current_day
+from utils.new_day_checker import check_current_day, check_auto_karma_for_absent
 
 
 async def main():
@@ -71,7 +71,9 @@ async def main():
 async def send_message_to_queue(bot: Bot):
     async with db_pool() as session:
         try:
-            current_day = await check_current_day(bot, session, ParamService(session))
+            param_service = ParamService(session)
+            current_day = await check_current_day(bot, session, param_service)
+            await check_auto_karma_for_absent(bot, session, param_service, current_day)
             await QueueService(session).check_free_spots(bot, current_day)
             await session.commit()
         except Exception as e:

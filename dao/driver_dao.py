@@ -76,6 +76,19 @@ class DriverDAO:
             .limit(limit))
         return result.scalars().all()
 
+    async def get_absent_drivers_for_auto_karma(self) -> Sequence[Driver]:
+        # Выбираем водителей, которые отсутствуют на текущую дату
+        target_date = date.today()
+        # И у которых в атрибуте есть значение "plus" >= 0
+        result = await self.session.execute(
+            select(Driver)
+            .filter(Driver.absent_until.is_not(None))
+            .filter(Driver.absent_until > target_date)
+            .filter(func.json_extract(Driver.attributes, '$.plus').isnot(None))
+            .filter(func.json_extract(Driver.attributes, '$.plus') >= 0)
+        )
+        return result.scalars().all()
+
     async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
         """
         Возвращает список водителей, имеющих общие парковочные места с заданным водителем,
@@ -85,7 +98,7 @@ class DriverDAO:
         stmt = (
             select(ParkingSpot.id)
             .join(ParkingSpot.drivers)
-            .where(Driver.id == driver_id)
+            .where(Driver.id.is_(driver_id))
         )
         result = await self.session.execute(stmt)
         parking_spot_ids = [row[0] for row in result.all()]

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, time
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import constants
 from dao.queue_dao import QueueDAO
 from handlers.driver_callback import add_button
 from models.driver import Driver
@@ -41,7 +42,7 @@ class QueueService:
     async def check_free_spots(self, bot, current_day):
         # Если сейчас от 19:00 до 21:00 или от 01:00 до 07:00, то выйти из процедуры
         now = datetime.now()
-        if 19 <= now.hour < 21 or 1 <= now.hour < 7:
+        if constants.new_day_begin_hour <= now.hour < constants.new_day_queue_hour or now.hour in constants.quiet_hours:
             return
 
         current_week_day = current_day.weekday()
@@ -96,7 +97,7 @@ class QueueService:
             q.spot_id = spot.id
             # к текущему времени добавляем 10 минут, но если получившиеся время от 19:00 до 09:00 следующего дня, то ставим 09:00 следующего дня
             choose_before = datetime.now() + timedelta(minutes=10)
-            if choose_before.hour >= 19:
+            if choose_before.hour >= constants.new_day_begin_hour:
                 choose_before = datetime.combine(now.date() + timedelta(days=1), time(9, 0))
             elif choose_before.hour < 8 or (choose_before.hour == 8 and choose_before.minute < (60 - 10)):
                 choose_before = datetime.combine(now.date(), time(9, 0))

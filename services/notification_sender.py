@@ -5,6 +5,7 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, CallbackQuery
 from aiogram.utils.formatting import Text
 
+from config import constants
 from models.driver import Driver
 
 logger = logging.getLogger(__name__)
@@ -14,18 +15,18 @@ class EventType(PyEnum):
     """
     Перечисление типов уведомлений.
     """
-    NEW_DAY = {"text": "Наступил новый день {my_date}\n\n"
+    NEW_DAY = {"text": "🔔 Наступил новый день {my_date}\n\n"
                        "Время занимать места на завтра, делиться своими освободившимися местами и вставать в очередь!\n\n"
                        "Также доступна кнопочка кармы 😉",
                "button_text": "Новый день",
-               "description": "Присылается, когда начинается новый день (в 19:00)."}
-    SPOT_OCCUPIED = {"text": "Место {spot_id} занял{suffix} {driver_from.description}",
+               "description": f"Присылается, когда начинается новый день (в {constants.new_day_begin_hour}:00)."}
+    SPOT_OCCUPIED = {"text": "🔔 Место {spot_id} занял{suffix} {driver_from.description}",
                      "button_text": "Заняли Ваше место",
                      "description": "Присылается, когда кто-то занял место, закрепленное за Вами."}
-    SPOT_RELEASED = {"text": "Место {spot_id} освободил{suffix} {driver_from.description}",
+    SPOT_RELEASED = {"text": "🔔 Место {spot_id} освободил{suffix} {driver_from.description}",
                      "button_text": "Освободили Ваше место",
                      "description": "Присылается, когда кто-то освободил место, закрепленное за Вами."}
-    PARTNER_ABSENT = {"text": "{driver_from.description} сказал{suffix}, что не приедет до {my_date}",
+    PARTNER_ABSENT = {"text": "🔔 {driver_from.description} сказал{suffix}, что не приедет до {my_date}",
                       "button_text": "Напарник не приедет",
                       "description": "Присылается, когда напарник сказал, что не приедет. Возможно, ваше место будет свободно в эти дни и можно его занять."}
     KARMA_CHANGED = {"text": "💟 Ваша карма изменилась на {karma_change}",
