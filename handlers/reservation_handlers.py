@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton
 from aiogram.utils.formatting import Text, as_marked_section, Bold, as_key_value, Italic, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -36,7 +36,7 @@ async def handle_day_selection(callback: CallbackQuery, callback_data: MyCallbac
     drivers_info = Bold("Свободно!") if not reservations else as_marked_section(
         Bold("Забронировано:"),
         *[as_key_value(f"{res.driver.description}",
-                       f"приедет {res.driver.absent_until.strftime('%d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
+                       f"приедет в {res.driver.absent_until.strftime('%a %d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
           for res in reservations],
         marker="• ", )
 
@@ -94,21 +94,8 @@ async def start_reservation_process(callback: CallbackQuery, callback_data: MyCa
     spot_id = callback_data.spot_id
     current_week_day = current_day.weekday()  # 0-6 (пн-вс)
 
-    await callback.message.edit_text(
-        text=f"🅿️ Выбрано место {spot_id}.\n\n"
-             f"🔴 - забронировано кем-то,\n"
-             f"🟡 - забронировано кем-то и Вами,\n"
-             f"🟢 - забронировано только Вами,\n"
-             f"⚪ - свободно.\n\n"
-             f"✔️ - текущий день недели.\n\n"
-             f"Выберите день недели:",
-        reply_markup=await get_weekdays_keyboard(session, driver, spot_id, current_week_day),
-        parse_mode="Markdown"
-    )
+    content = Text(f"🅿️ Выбрано место {spot_id}.\n\n")
 
-
-async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int) -> InlineKeyboardMarkup:
-    """Генератор клавиатуры с днями недели"""
     week_days = [
         ("Пн", 0), ("Вт", 1), ("Ср", 2), ("Чт", 3),
         ("Пт", 4), ("Сб", 5), ("Вс", 6)
@@ -121,8 +108,13 @@ async def get_weekdays_keyboard(session, driver, spot_id: int, current_day: int)
         other = any(res.driver_id != driver.id for res in reservations)
         # 🔴- other and not me, 🟠 - other and me, 🟡 - only me, 🟢 - free
         status = "🔴" if other and not me else ("🟡" if other and me else ("🟢" if me else "⚪️"))
-        add_button(f"{status} {day_name}" + (' ✔️' if day_num == current_day else ''),
+        add_button(f"{status} {day_name}" + (' ✔️' if day_num == current_week_day else ''),
                    "choose-day", driver.chat_id, builder, spot_id, day_num)
-    builder.adjust(3)
+        content += Code(
+            f"{status} {day_name}:\t..\t{', '.join(res.driver.title for res in reservations) if reservations else 'место свободно 🫶'}\n")
+    content += (f"\n✔️ - текущий день недели.\n\n"
+                f"Выберите день недели:")
     add_button("⬅️ Назад", "choose-spots", driver.chat_id, builder)
-    return builder.as_markup()
+    builder.adjust(3, 3, 1)
+
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())

@@ -5,7 +5,11 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.driver import Driver
+from models.user_audit import UserActionType
+from services.audit_service import AuditService
 from services.driver_service import DriverService
+from services.notification_sender import EventType, NotificationSender
 from services.param_service import ParamService
 
 router = Router()
@@ -39,9 +43,9 @@ async def list_params_handler(message: Message, param_service: ParamService):
 
 
 @router.message(
-    F.text.regexp(r"(?i).*начислить.* ([+-]?\d+) .*карм").as_("match"),
+    F.text.regexp(r"(?i).*начислить.* ([+-]?\d+) .*кармы(.*)").as_("match"),
     flags={"check_admin": True, "check_driver": True})
-async def plus_karma(message: Message, session: AsyncSession, is_private, match: re.Match):
+async def plus_karma(message: Message, session: AsyncSession, driver: Driver, current_day, is_private, match: re.Match):
     if is_private:
         await message.answer("Команда недоступна в личных сообщениях.")
         return
@@ -52,10 +56,14 @@ async def plus_karma(message: Message, session: AsyncSession, is_private, match:
     karma = int(match.group(1))  # Извлекаем количество добавляемой кармы
     # Получаем id пользователя, на сообщение которого дан ответ
     replied_user_id = message.reply_to_message.from_user.id
-    driver = await DriverService(session).get_by_chat_id(replied_user_id)
-    if driver:
-        driver.attributes['karma'] = driver.attributes.get('karma', 0) + karma
+    driver_to = await DriverService(session).get_by_chat_id(replied_user_id)
+    if driver_to:
+        driver_to.attributes["karma"] = driver_to.attributes.get("karma", 0) + karma
         await message.answer(
-            f"{'💖' if karma >= 0 else '💔'} {driver.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
+            f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
+        await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to, match.group(2),
+                                                             0, karma)
+        await AuditService(session).log_action(driver_to.id, UserActionType.GET_ADMIN_KARMA, current_day, karma,
+                                               f"Админ {driver.title} изменил карму {driver_to.title} на {karma} и стало {driver_to.attributes["karma"]}")
     else:
         await message.answer("Пользователь не нашелся в базе данных.")

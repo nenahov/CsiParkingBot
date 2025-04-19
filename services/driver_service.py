@@ -1,3 +1,6 @@
+from datetime import date
+
+from sqlalchemy import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.driver_dao import DriverDAO
@@ -22,5 +25,11 @@ class DriverService:
     async def remove_attribute_for_all(self, key: str):
         await self.dao.remove_attribute_for_all(key)
 
-    async def get_top_karma_drivers(self, limit: int = 10):
+    async def get_top_karma_drivers(self, limit: int = 10) -> Sequence[Driver]:
         return await self.dao.get_top_karma_drivers(limit)
+
+    async def get_absent_drivers_for_auto_karma(self):
+        return await self.dao.get_absent_drivers_for_auto_karma()
+
+    async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
+        return await self.dao.get_active_partner_drivers(driver_id, target_date)

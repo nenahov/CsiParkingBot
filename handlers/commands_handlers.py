@@ -6,6 +6,8 @@ from aiogram.utils.formatting import as_list, as_marked_section, Bold, as_key_va
     Italic
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from config import constants
+
 router = Router()
 
 
@@ -31,36 +33,40 @@ async def main_commands(message, is_new: bool):
             marker="• ",
         ),
         as_marked_section(
-            Bold("В 19:00:"),
+            Bold(f"В {constants.new_day_begin_hour}:00:"),
             "Все парковочные места освобождаются.",
-            "Очередь на бронирование очищается.",
-            "Начинается прием заявок на бронирование на следующий день.",
+            "Очередь на свободные места очищается.",
+            "Начинается прием заявок на свободные места на следующий день.",
             marker="• ",
         ),
         as_marked_section(
             Bold("Если у вас есть бронь:"),
-            "Вы можете подтвердить, что приедете, или сообщить, что не сможете приехать. Если вы отменяете бронь, место становится доступным для других пользователей.",
+            "Вы можете подтвердить (🚗 Приеду...), что приедете, или сообщить, что не сможете приехать (🫶 Не приеду...)",
+            "Если вы отменяете бронь, место становится доступным для других пользователей! 🫶",
+            Text("При подтверждении брони, на карте (") + Code("показать карту") + ") будет нарисована ваша машинка 🚙",
+            "Если вы ничего не нажали - тоже не страшно: забронированное место останется за Вами.",
             marker="• ",
         ),
         as_marked_section(
             Bold("Если у вас нет брони:"),
-            "Вы можете встать «в очередь» на свободное место.",
+            "Вы можете встать «в очередь» на розыгрыш свободных мест (/status → 🚗 Приеду... → 🙋 Встать в очередь).",
             marker="• ",
         ),
         as_marked_section(
-            Bold("Начиная с 21:00:"),
+            Bold(f"Начиная с {constants.new_day_queue_hour}:00:"),
             "Свободные места разыгрываются между теми, кто стоит в очереди.",
-            "Вероятность получения места зависит от вашей кармы.",
+            "Вероятность получения места зависит от вашей Кармы 🫶.",
             "Вы получите уведомление с предложением занять выпавшее место.",
+            "Нужно будет откликнуться на это предложение до 9:00 утра. В противном случае место будет разыграно заново!",
+            "После 9:00 свободные места разыгрываются с периодичностью 10 минут.",
             marker="• ",
         ),
         as_marked_section(
-            Bold("Тихие часы:"),
+            Bold("Тихие часы 😴:"),
             "С 01:00 до 07:00 розыгрыши свободных мест не проводятся.",
             marker="• ",
         ),
         "Если возникнут вопросы или нужна помощь – обращайтесь!",
-        HashTag("#commands"),
         sep="\n\n",
     )
     builder = InlineKeyboardBuilder()
@@ -95,8 +101,8 @@ async def starter_info(callback: CallbackQuery):
         Bold("\n\n1. Забронируйте свое место парковки на дни недели\n") +
         Italic("Чтобы место было забронировано за Вами в эти дни"),
         "Запустите команду /status",
-        Text("Нажмите на кнопку '📅 Расписание...' (появляется только в ",
-             TextLink(f"ЛС", url=f"https://t.me/{bot_username}"), ")"),
+        Text("Нажмите на кнопку '⚙️ Настройки...' → '📅 Расписание...' (",
+             TextLink(f"появляется только в ЛС", url=f"https://t.me/{bot_username}"), ")"),
         "Выберите место и дни недели, которые хотите забронировать",
         marker="• ", )
 
@@ -104,7 +110,7 @@ async def starter_info(callback: CallbackQuery):
         Bold("\n\n2. Зарабатывайте 'Карму'\n") +
         Italic("Карма влияет на шанс выбора, когда несколько человек в очереди и освободилось место"),
         "Запустите команду /status",
-        "Нажмите на кнопку '🎲 Розыгрыш кармы!'",
+        "Нажмите на кнопку '🎲 Карма! 🆓'",
         "Заходите раз в день на новый розыгрыш.",
         marker="• ", )
 
@@ -118,7 +124,7 @@ async def starter_info(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="ℹ️ Мой статус", switch_inline_query_current_chat='Мой статус'))
     builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
-                                     switch_inline_query_current_chat='Написать разработчику <СООБЩЕНИЕ>'))
+                                     switch_inline_query_current_chat='Написать разработчику: "Вместо этого текста напишите Ваше сообщение"'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
@@ -134,6 +140,8 @@ async def info_commands(callback: CallbackQuery):
             as_key_value(Text("🗺️ ", Code("показать карту парковки")),
                          "показывает карту парковки на текущий момент"),
             as_key_value(Text("🗺️ ", Code("показать карту на завтра")), "показывает карту парковки на завтра"),
+            as_key_value(Text("⛅️ ", Code("прогноз погоды")), "показывает прогноз погоды на сегодняшний день"),
+            as_key_value(Text("☀️ ", Code("прогноз погоды на завтра")), "показывает прогноз погоды на завтра"),
             as_key_value(Text("📝 ", Code("показать список команд")), "показывает список команд"),
             marker="• ", ))
     builder = InlineKeyboardBuilder()
@@ -141,10 +149,13 @@ async def info_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="🗺️ Показать карту", switch_inline_query_current_chat='Показать карту'))
     builder.add(InlineKeyboardButton(text="🗺️ Карта на завтра",
                                      switch_inline_query_current_chat='Показать карту на завтра'))
+    builder.add(InlineKeyboardButton(text="⛅️ Прогноз погоды", switch_inline_query_current_chat='Прогноз погоды'))
+    builder.add(InlineKeyboardButton(text="☀️ Прогноз погоды на завтра",
+                                     switch_inline_query_current_chat='Прогноз погоды на завтра'))
     builder.add(
         InlineKeyboardButton(text="📝 Показать список команд", switch_inline_query_current_chat='Список команд'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
-    builder.adjust(1, 2, 1, 1)
+    builder.adjust(1, 2, 2, 1, 1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
@@ -213,7 +224,7 @@ async def other_commands(callback: CallbackQuery):
             marker="• ", ))
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
-                                     switch_inline_query_current_chat='Написать разработчику <СООБЩЕНИЕ>'))
+                                     switch_inline_query_current_chat='Написать разработчику: "сюда впишите Ваше сообщение"'))
     builder.add(InlineKeyboardButton(text="🏁 Поиграть в тетрис 🏎️", switch_inline_query_current_chat='Тетрис'))
     builder.add(InlineKeyboardButton(text="🔒 В разработке", callback_data=f"restrict_commands"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))

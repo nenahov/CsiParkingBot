@@ -39,4 +39,4 @@ class Driver(Base):
                        spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND)], key=lambda s: s.id)
 
     def my_spots(self) -> list[ParkingSpot]:
-        return sorted([spot for spot in self.parking_spots if spot.status != SpotStatus.HIDEN], key=lambda s: s.id)
+        return sorted([spot for spot in self.parking_spots if spot.status != SpotStatus.HIDDEN], key=lambda s: s.id)
