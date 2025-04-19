@@ -1,6 +1,6 @@
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta, date
 
 from aiogram import Router, F
 from aiogram.enums import ParseMode
@@ -84,13 +84,13 @@ async def show_weather_week(message: Message, driver: Driver, is_private):
 
 @router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*завтра)"), flags={"check_driver": True})
 async def show_weather_tomorrow(message: Message):
-    day = datetime.today() + timedelta(days=1)
+    day = date.today() + timedelta(days=1)
     content = await WeatherService().get_weather_content(day)
     await message.reply(**content.as_kwargs())
 
 
 @router.message(F.text.regexp(r"(?i)(.*прогноз.*погод)"), flags={"check_driver": True})
 async def show_weather(message: Message):
-    day = datetime.today()
+    day = date.today()
     content = await WeatherService().get_weather_content(day)
     await message.reply(**content.as_kwargs())

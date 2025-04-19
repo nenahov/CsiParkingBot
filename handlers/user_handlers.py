@@ -1,7 +1,7 @@
 import asyncio
 import random
 import re
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
@@ -42,7 +42,7 @@ async def show_status_callback(callback: CallbackQuery, session, driver, current
 async def get_status_message(driver: Driver, is_private, session, current_day):
     await session.commit()
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
-    if datetime.today() != current_day:
+    if date.today() != current_day:
         ts = ' завтра'
         on_ts = ' на завтра'
     else:
