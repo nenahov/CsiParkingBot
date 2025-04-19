@@ -5,6 +5,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
+from models.user_audit import UserActionType
+from services.audit_service import AuditService
 from services.notification_sender import send_reply, EventType, NotificationSender, send_alarm
 from utils.cars_generator import generate_carousel_image, cars_count
 
@@ -31,7 +33,7 @@ async def show_settings_menu(event, session, driver: Driver):
 
 @router.callback_query(MyCallback.filter(F.action == "edit-alarms"),
                        flags={"check_driver": True, "check_callback": True})
-async def edit_alarms(event, session, driver: Driver):
+async def edit_alarms(event, driver: Driver):
     content = Text(Bold("🛎️ Настройки уведомлений:"))
     # content += '\n\n'
     # content += Bold("✅ - уведомление приходит,\n❌ - уведомление не приходит")
@@ -64,7 +66,7 @@ async def set_alarms(event, callback_data: MyCallback, session, driver: Driver, 
         disabled_events.remove(callback_data.event_type)
     driver.attributes["disabled_events"] = disabled_events
     await session.commit()
-    await edit_alarms(event, session, driver)
+    await edit_alarms(event, driver)
 
 
 @router.callback_query(MyCallback.filter(F.action == "test-alarms"),
@@ -81,7 +83,7 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
 
 @router.callback_query(MyCallback.filter(F.action == "edit-avatar"),
                        flags={"check_driver": True, "check_callback": True})
-async def edit_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+async def edit_avatar(event: CallbackQuery, driver: Driver):
     current_index = driver.attributes.get("car_index", driver.id)
     photo = generate_carousel_image(current_index)
     await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
@@ -95,6 +97,8 @@ async def edit_avatar(event: CallbackQuery, callback_data: MyCallback, session, 
 async def set_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
     driver.attributes["car_index"] = callback_data.spot_id
     await send_alarm(event, "🏎️ Аватар успешно установлен")
+    await AuditService(session).log_action(driver.id, UserActionType.CHOOSE_AVATAR, current_day,
+                                           description=f"{driver.description} выбрал аватар {callback_data.spot_id}")
 
 
 @router.callback_query(F.data.startswith("carousel:"), flags={"check_driver": True})

@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 
 from config import constants
 from handlers.user_handlers import get_status_message
+from models.user_audit import UserActionType
+from services.audit_service import AuditService
 from services.driver_service import DriverService
 from services.notification_sender import NotificationSender, EventType
 from services.parking_service import ParkingService
@@ -89,6 +91,9 @@ async def check_auto_karma_for_absent(bot, session, param_service, current_day):
                                     text=f"💟 Вы получили +{data.dice.value} в карму. /status"
                                          f"\n\nЗавтра будет шанс получить еще.")
             logger.info(f"Авторозыгрыш кармы для {driver.description}: +{data.dice.value}")
+            await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
+                                                   f"Авторозыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
+
             await session.commit()
         except Exception as e:
             logger.error(f"Ошибка авторозыгрыша кармы для {driver.description}: {e}")

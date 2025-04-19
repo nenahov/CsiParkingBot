@@ -14,6 +14,8 @@ from config import constants
 from handlers.driver_callback import MyCallback, add_button
 from models.driver import Driver
 from models.parking_spot import SpotStatus
+from models.user_audit import UserActionType
+from services.audit_service import AuditService
 from services.driver_service import DriverService
 from services.notification_sender import NotificationSender, EventType, send_alarm, send_reply
 from services.parking_service import ParkingService
@@ -203,7 +205,11 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     for spot in driver.my_spots():
         spot.for_queue_after = for_queue_after
     await ParkingService(session).leave_spot(driver)
-    await QueueService(session).leave_queue(driver)
+    queue_service = QueueService(session)
+    if queue_service.is_driver_in_queue(driver):
+        await queue_service.leave_queue(driver)
+        await AuditService(session).log_action(driver.id, UserActionType.LEAVE_QUEUE, current_day,
+                                               description=f"{driver.description} покинул очередь, т.к. уехал")
     await send_alarm(event, f"Вы уехали до {date.strftime('%a %d.%m.%Y')}")
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
@@ -211,6 +217,8 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
     active_partners = await DriverService(session).get_active_partner_drivers(driver.id, date)
     notification_sender = NotificationSender(event.bot)
     for spot in current_spots:
+        await AuditService(session).log_action(driver.id, UserActionType.RELEASE_SPOT, current_day, spot.id,
+                                               f"{driver.description} освободил место {spot.id}")
         await session.refresh(spot, ["drivers"])
         for owner in spot.drivers:
             if owner.id != driver.id:
@@ -343,8 +351,8 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
         if not queue or queue.spot_id != callback_data.spot_id:
             await callback.answer("❌ Вы не можете занять это место!", show_alert=True)
             return
+    in_queue = await queue_service.is_driver_in_queue(driver)
     if spot.status is not None and not (spot.status == SpotStatus.FREE or spot.current_driver_id == driver.id):
-        in_queue = await queue_service.is_driver_in_queue(driver)
         if in_queue:
             await queue_service.leave_queue(driver)
             await queue_service.join_queue(driver)
@@ -353,9 +361,14 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
             show_alert=True)
         return
     await parking_service.occupy_spot(driver, callback_data.spot_id)
-    await queue_service.leave_queue(driver)
+    if in_queue:
+        await queue_service.leave_queue(driver)
+        await AuditService(session).log_action(driver.id, UserActionType.LEAVE_QUEUE, current_day,
+                                               description=f"{driver.description} покинул очередь, т.к. занял место {spot.id}")
     await callback.answer(f"Вы заняли место 🅿️ {spot.id}.\n\nНе забудьте его освободить, если уезжаете не поздно 🫶",
                           show_alert=True)
+    await AuditService(session).log_action(driver.id, UserActionType.TAKE_SPOT, current_day, spot.id,
+                                           f"{driver.description} занял место {spot.id}")
     await show_status_callback(callback, session, driver, current_day, is_private)
     partners = await DriverService(session).get_active_partner_drivers(driver.id, current_day)
     notification_sender = NotificationSender(callback.bot)
@@ -387,6 +400,9 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
         driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
         await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
                               show_alert=True)
+        await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
+                                               f"Розыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
+
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 

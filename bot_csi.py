@@ -65,6 +65,10 @@ async def main():
     dp.include_router(game_handlers.router)
     dp.include_router(settings_handlers.router)
 
+    # dp.workflow_data.update(
+    #     audit_service=audit_service
+    # )
+
     await dp.start_polling(bot)
 
 
