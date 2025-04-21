@@ -43,7 +43,7 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
     await session.commit()
     await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
     if date.today() != current_day:
-        ts = ' завтра'
+        ts = ' завтра'  # tomorrow suffix
         on_ts = ' на завтра'
     else:
         ts = ''
@@ -206,7 +206,7 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
         spot.for_queue_after = for_queue_after
     await ParkingService(session).leave_spot(driver)
     queue_service = QueueService(session)
-    if queue_service.is_driver_in_queue(driver):
+    if await queue_service.is_driver_in_queue(driver):
         await queue_service.leave_queue(driver)
         await AuditService(session).log_action(driver.id, UserActionType.LEAVE_QUEUE, current_day,
                                                description=f"{driver.description} покинул очередь, т.к. уехал")
