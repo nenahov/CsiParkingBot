@@ -10,6 +10,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
+from models.user_audit import UserActionType
+from services.audit_service import AuditService
 from services.param_service import ParamService
 
 router = Router()
@@ -218,7 +220,7 @@ class GameState:
 
 @router.message(or_f(Command("tetris"), F.text.regexp(r"(?i)(.*тетрис)")),
                 flags={"check_driver": True})
-async def start_game(message: types.Message, driver: Driver, session: AsyncSession):
+async def start_game(message: types.Message, driver: Driver, session: AsyncSession, current_day):
     game_id = message.chat.id
 
     # Удаляем предыдущую игру если существует
@@ -232,6 +234,8 @@ async def start_game(message: types.Message, driver: Driver, session: AsyncSessi
     game.player_name = driver.title
     games[game_id] = game
     await game.start_auto_update(message.bot, session)
+    await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
+                                           f"{driver.title} начал игру Тетрис")
 
 
 @router.callback_query(lambda c: c.data in ['game_left', 'game_right'], flags={"check_driver": True})

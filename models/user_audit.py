@@ -15,6 +15,7 @@ class UserActionType(PyEnum):
     GET_ADMIN_KARMA = "Получил карму от админа"
     SPEND_KARMA = "Потратил карму на ..."
     CHOOSE_AVATAR = "Выбрал аватар"
+    GAME = "Играет в мини-игры"
 
 
 class UserAudit(Base):
