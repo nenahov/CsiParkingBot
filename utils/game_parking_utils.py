@@ -6,9 +6,10 @@ EMPTY = '◻️'
 EMPTY2 = '◽️'
 # WALLS = ['🌲', '🏡', '🏛', '🏗', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏫', '🏬', '🏭', '💒']
 # WALL_WEIGHTS = [0, 80, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-WALLS = ['🌲', '🏡', '🏛', '🏗', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏬', '🏭', '💒']
-WALL_WEIGHTS = [0, 80, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+WALLS = ['🌲', '🏡', '🌳', '🌲', '🛸', '🚧', '🏗', '🏛', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏬', '🏭', '💒']
+WALL_WEIGHTS = [0, 800, 50, 50, 1, 20, 20, 10, 10, 10, 10, 10, 10, 10, 10, 20, 10, 10, 10]
 FINISH = '🅿️'
+TREASURE = '🫶'
 CAR = '🚘'
 FUEL = '⛽️'
 STONE = '🚓'
@@ -21,14 +22,14 @@ class GameState:
     __slots__ = ("x", "y", "fuel", "map_matrix", "wx", "wy",
                  "car_on_parking")  # экономит память и запрещает новые атрибуты
 
-    def __init__(self, x: int, y: int, fuel: int, map_matrix, wx: int, wy: int):
+    def __init__(self, x: int, y: int, fuel: int, wx: int, wy: int, map_matrix):
         self.x = x
         self.y = y
         self.fuel = fuel
-        self.map_matrix = map_matrix
         self.wx = wx
         self.wy = wy
         self.car_on_parking = False
+        self.map_matrix = map_matrix
 
     def __repr__(self):
         return f"{self.__class__.__name__}(x={self.x}, y={self.y})"
@@ -74,13 +75,13 @@ class GameState:
         n, m = len(self.map_matrix), len(self.map_matrix[0])
         # Подвинем окно вслед за машиной
         if self.x - 2 < self.wx:
-            self.wx = max(-1, self.wx - 1)
+            self.wx = max(-1, self.x - 2)
         if self.y - 2 < self.wy:
-            self.wy = max(-1, self.wy - 1)
+            self.wy = max(-1, self.y - 2)
         if self.x + 2 >= self.wx + W_WIDTH:
-            self.wx = min(n - W_WIDTH + 1, self.wx + 1)
+            self.wx = min(n - W_WIDTH + 1, self.x + 2 - W_WIDTH + 1)
         if self.y + 2 >= self.wy + W_HEIGHT:
-            self.wy = min(m - W_HEIGHT + 1, self.wy + 1)
+            self.wy = min(m - W_HEIGHT + 1, self.y + 2 - W_HEIGHT + 1)
 
         result = ''
         for j in range(self.wy, self.wy + W_HEIGHT):
@@ -130,9 +131,14 @@ def generate_map_with_constraints(n, m, wall_ratio=0.3, fuel_ratio=0.01, stone_r
 
         finish = random.choice(possible_finishes)
         all_coords.remove(finish)
+        possible_finishes.remove(finish)
+
+        treasure = random.choice(possible_finishes)
+        all_coords.remove(treasure)
 
         map_matrix[start[0]][start[1]] = CAR
         map_matrix[finish[0]][finish[1]] = FINISH
+        map_matrix[treasure[0]][treasure[1]] = TREASURE
 
         num_walls = int(wall_ratio * n * m)
         for _ in range(num_walls):
@@ -155,9 +161,8 @@ def generate_map_with_constraints(n, m, wall_ratio=0.3, fuel_ratio=0.01, stone_r
                 map_matrix[i][j] = STONE
 
         if is_path_exists(map_matrix):
-            return GameState(start[0], start[1], 50, map_matrix,
-                             min(n - W_WIDTH + 1, max(-1, start[0] - ((W_WIDTH - 1) // 2))),
-                             min(m - W_HEIGHT + 1, max(-1, start[1] - ((W_HEIGHT - 1) // 2))))
+            return GameState(start[0], start[1], 50, min(n - W_WIDTH + 1, max(-1, start[0] - ((W_WIDTH - 1) // 2))),
+                             min(m - W_HEIGHT + 1, max(-1, start[1] - ((W_HEIGHT - 1) // 2))), map_matrix)
 
     raise ValueError("Не удалось сгенерировать карту с заданным расстоянием и проходимостью.")
 

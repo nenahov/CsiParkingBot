@@ -1,3 +1,4 @@
+import pickle
 from math import ceil
 
 from aiogram import Router, F
@@ -11,29 +12,48 @@ from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.notification_sender import send_alarm
-from utils.game_parking_utils import generate_map_with_constraints, STONE, FINISH, EMPTY, FUEL, CAR
-
-router = Router()
+from utils.game_parking_utils import generate_map_with_constraints, STONE, FINISH, EMPTY, FUEL, CAR, TREASURE
 
 states = dict()
+router = Router()
+
+
+def get_state(driver: Driver):
+    result = states.get(driver.id)
+    try:
+        if not result:
+            result = pickle.loads(driver.attributes.get('p_state', '').encode('latin1'))
+    except:
+        return None
+    return result
+
+
+def save_state(driver: Driver, game_state):
+    driver.attributes['p_state'] = pickle.dumps(game_state).decode('latin1')
+    states[driver.id] = game_state
 
 
 @router.callback_query(F.data.startswith("game_parking"),
                        flags={"check_driver": True})
 async def game_parking(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     content = Bold(f"Игра «Доберись до парковки».\n\n")
-    content += (f"Вы на {CAR} должны добраться до {FINISH}.\n"
-                "Следите за уровнем топлива!\n"
+    content += (f"Вы на {CAR} должны добраться до {FINISH} (+1 кармы).\n"
+                "Следите за уровнем топлива! (если закончится - конец игры и -1 кармы)\n"
                 f"По дороге можете заправиться на {FUEL} (после заправки - исчезает);\n"
                 "Домики - препятствия;\n"
                 f"{EMPTY} - дорога;\n"
                 f"{STONE} - теряете 10% топлива;\n"
+                f"{TREASURE} - получаете +1 кармы;\n"
                 f"{FINISH} - финиш!\n\n")
 
     await callback.message.answer(**content.as_kwargs())
-
-    game_state = generate_map_with_constraints(17, 13)
-    states[driver.chat_id] = game_state
+    game_state = get_state(driver)
+    if game_state is None or game_state.is_end_game():
+        game_state = generate_map_with_constraints(17, 13)
+        save_state(driver, game_state)
+        driver.attributes["karma"] = max(0, driver.attributes.get("karma", 0) - 1)
+        await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -1,
+                                               f"{driver.title} начал игру Доберись до парковки за -1 кармы")
 
     content = Text("E ", Italic(f"{'▓' * ceil(game_state.fuel / 10)}{'▒' * ceil((100 - game_state.fuel) / 10)}"),
                    f"  F ⛽️\n\n")
@@ -44,7 +64,7 @@ async def game_parking(callback: CallbackQuery, session: AsyncSession, driver: D
     await callback.message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
     await callback.answer()
     await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
-                                           f"{driver.title} начал игру Доберись до парковки")
+                                           f"{driver.title} играет в Доберись до парковки")
 
 
 async def get_keyboard_by_game_state(driver, game_state):
@@ -81,11 +101,17 @@ async def pass_callback(callback: CallbackQuery):
 @router.callback_query(MyCallback.filter(F.action == "p_move"),
                        flags={"check_driver": True, "check_callback": True})
 async def move_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    game_state = states.get(driver.chat_id)
+    game_state = get_state(driver)
     if game_state is None:
         await send_alarm(callback, "⚠️ Начните Новую игру!")
         return
-    game_state.move(callback_data.spot_id, callback_data.day_num)
+    item = game_state.move(callback_data.spot_id, callback_data.day_num)
+    save_state(driver, game_state)
+    if item is not None and item == TREASURE:
+        driver.attributes["karma"] = driver.attributes.get("karma", 0) + 1
+        await send_alarm(callback, "🫶 +1 к Вашей карме!")
+        await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
+                                               f"{driver.title} получил +1 к карме в игре Доберись до парковки")
 
     if not await check_end_game(callback, game_state, driver, session, current_day):
         content = Text("E ", Italic(f"{'▓' * ceil(game_state.fuel / 10)}{'▒' * (10 - ceil(game_state.fuel / 10))}"),
@@ -109,9 +135,12 @@ async def check_end_game(callback, game_state, driver, session, current_day):
             await send_alarm(callback, "🎉 Поздравляем! Вы победили!")
             await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 1,
                                                    f"{driver.title} доехал до парковки в игре Доберись до парковки")
+            driver.attributes["karma"] = driver.attributes.get("karma", 0) + 1
+            await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
+                                                   f"{driver.title} успешно закончил игру Доберись до парковки и получил +1 кармы")
 
         else:
-            await callback.message.edit_text(text=("😅 У вас закончился топливо!\n\n"
+            await callback.message.edit_text(text=("😅 У вас закончилось топливо!\n\n"
                                                    "◼️◼️◼️◼️◼️◼️◼️\n"
                                                    "◼️🅿️🅿️🅿️🅿️◼️◼️\n"
                                                    "◼️🅿️◼️◼️🅿️◼️◼️\n"
@@ -122,5 +151,9 @@ async def check_end_game(callback, game_state, driver, session, current_day):
             await send_alarm(callback, "❌ Игра окончена")
             await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, -1,
                                                    f"У {driver.title} закончилось топливо в игре Доберись до парковки")
+            driver.attributes["karma"] = max(0, driver.attributes.get("karma", 0) - 1)
+            await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
+                                                   f"{driver.title} проиграл в игре Доберись до парковки и лишился -1 кармы")
+
         return True
     return False

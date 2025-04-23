@@ -225,9 +225,9 @@ async def other_commands(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
                                      switch_inline_query_current_chat='Написать разработчику: "сюда впишите Ваше сообщение"'))
-    builder.add(InlineKeyboardButton(text="🏁 Поиграть в тетрис 🏎️", switch_inline_query_current_chat='Тетрис'))
     if callback.message.chat.type == 'private':
-        builder.add(InlineKeyboardButton(text="Игра «🅿️ Доберись до парковки»", callback_data=f"game_parking"))
+        builder.add(InlineKeyboardButton(text="🫶 Доберись до парковки 🅿️", callback_data=f"game_parking"))
+    builder.add(InlineKeyboardButton(text="🏁 Поиграть в тетрис 🏎️", switch_inline_query_current_chat='Тетрис'))
     builder.add(InlineKeyboardButton(text="🔒 В разработке", callback_data=f"restrict_commands"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
