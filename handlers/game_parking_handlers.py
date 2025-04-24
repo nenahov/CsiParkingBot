@@ -152,7 +152,7 @@ async def check_end_game(callback, game_state, driver, session, current_day):
             await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, -1,
                                                    f"У {driver.title} закончилось топливо в игре Доберись до парковки")
             driver.attributes["karma"] = max(0, driver.attributes.get("karma", 0) - 1)
-            await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
+            await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -1,
                                                    f"{driver.title} проиграл в игре Доберись до парковки и лишился -1 кармы")
 
         return True
