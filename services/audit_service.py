@@ -14,8 +14,9 @@ class AuditService:
                          description: str = None):
         return await self.dao.create(driver_id, action, current_day, num, description)
 
-    # async def get_weekly_karma(self, driver_id: int):
-    #     return await self.dao.get_karma_statistics(driver_id, days=7)
+    async def get_weekly_karma(self, limit: int):
+        return await self.dao.get_weekly_karma(limit)
+
     #
     # async def get_monthly_karma(self, driver_id: int):
     #     return await self.dao.get_karma_statistics(driver_id, days=30)

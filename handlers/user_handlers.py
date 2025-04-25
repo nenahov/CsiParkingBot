@@ -82,6 +82,11 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
     if is_private:
         add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
         keyboard_sizes.append(1)
+        # В Сб и Вс доберись до парковки
+        if current_day.weekday() == 5 or current_day.weekday() == 6:
+            builder.add(InlineKeyboardButton(text="🫶 Доберись до парковки 🅿️", callback_data=f"game_parking"))
+            keyboard_sizes.append(1)
+
 
     builder.adjust(*keyboard_sizes)
 
@@ -406,9 +411,22 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.message(F.text.regexp(r"(?i)(.*топ карм)"), flags={"check_driver": True})
-async def top_karma(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
-    drivers = await DriverService(session).get_top_karma_drivers(10)
+@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм.* нед").as_("match"), flags={"check_driver": True})
+async def top_karma_week(message: Message, session: AsyncSession, match: re.Match):
+    limit = int(match.group(1) if match.group(1) is not None else 10)
+    result = await AuditService(session).get_weekly_karma(limit)
+    content = Text(Bold(f"🏆 Топ {len(result)} кармы водителей за неделю:\n"))
+    for total, description in result:
+        content += '\n'
+        content += Bold(f"{total}")
+        content += f"\t..\t{description}"
+    await message.reply(**content.as_kwargs())
+
+
+@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм").as_("match"), flags={"check_driver": True})
+async def top_karma(message: Message, session: AsyncSession, match: re.Match):
+    limit = int(match.group(1) if match.group(1) is not None else 10)
+    drivers = await DriverService(session).get_top_karma_drivers(limit)
     content = Text(Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n"))
     for driver in drivers:
         content += '\n'

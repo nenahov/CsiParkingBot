@@ -1,5 +1,6 @@
 from datetime import date
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user_audit import UserActionType, UserAudit
@@ -22,6 +23,22 @@ class UserAuditDAO:
         self.session.add(audit_record)
         await self.session.commit()
         return audit_record
+
+    async def get_weekly_karma(self, limit: int):
+        stmt = text("""
+                select sum(num) as total, d.description
+                from user_audit ua
+                join drivers d on d.id = ua.driver_id
+                where action in ('DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA')
+                  and current_day >= date('now','-7 days')
+                  and current_day <= date('now','-5 hour')
+                  and d.id != :excluded_id
+                group by d.description
+                order by total desc, d.description
+                limit :limit
+            """)
+        result = await self.session.execute(stmt, {"excluded_id": 1, "limit": limit})
+        return result.all()
 
     # async def get_karma_statistics(self, driver_id: int, days: int = None):
     #     query = self.session.execute(Select(func.sum(UserAudit.num)).filter(
