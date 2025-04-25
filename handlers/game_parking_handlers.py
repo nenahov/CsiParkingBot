@@ -1,9 +1,10 @@
 import pickle
+import re
 from math import ceil
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
-from aiogram.utils.formatting import Text, Bold, Italic
+from aiogram.types import CallbackQuery, Message
+from aiogram.utils.formatting import Text, Bold, Italic, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
+from services.driver_service import DriverService
 from services.notification_sender import send_alarm
 from utils.game_parking_utils import generate_map_with_constraints, STONE, FINISH, EMPTY, FUEL, CAR, TREASURE
 
@@ -157,3 +159,21 @@ async def check_end_game(callback, game_state, driver, session, current_day):
 
         return True
     return False
+
+
+@router.message(
+    F.text.regexp(r"(?i).*показать Доберись до парковки.* (\d+)").as_("match"),
+    flags={"check_admin": True, "check_driver": True})
+async def show_game_map(message: Message, session: AsyncSession, driver: Driver, current_day, is_private,
+                        match: re.Match):
+    driver_id = int(match.group(1))
+    gamer = await DriverService(session).get_by_id(driver_id)
+    if gamer is None:
+        await message.answer("🚫 Пользователь не найден")
+        return
+    game_state = get_state(gamer)
+    if game_state is None:
+        await message.answer("🚫 Игра не начата")
+        return
+    content = Code(game_state.get_map())
+    await message.answer(**content.as_kwargs())

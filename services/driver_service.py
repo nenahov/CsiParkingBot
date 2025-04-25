@@ -22,6 +22,9 @@ class DriverService:
     async def get_by_chat_id(self, chat_id: int):
         return await self.dao.get_by_chat_id(chat_id)
 
+    async def get_by_id(self, id: int):
+        return await self.dao.get_by_id(id)
+
     async def remove_attribute_for_all(self, key: str):
         await self.dao.remove_attribute_for_all(key)
 
