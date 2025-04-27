@@ -29,9 +29,11 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     frame_index = await get_frame_index(message, session)
 
     # Генерируем карту
-    img = generate_parking_map(parking_spots=spots, reservations_data=reservations,
+    img = await generate_parking_map(parking_spots=spots, reservations_data=reservations,
                                driver=driver if is_private else None,
-                               use_spot_status=False, frame_index=frame_index)
+                                     use_spot_status=False, frame_index=frame_index,
+                                     day=day
+                                     )
 
     img_buffer = BytesIO()
     img.save(img_buffer, format="PNG")
@@ -59,11 +61,12 @@ async def map_command(message: Message, session, driver, current_day, is_private
     for spot in spots:
         await session.refresh(spot, ["current_driver"])
     # Генерируем карту
-    img = generate_parking_map(
+    img = await generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
         driver=driver if is_private else None,
-        frame_index=frame_index
+        frame_index=frame_index,
+        day=current_day
     )
 
     img_buffer = BytesIO()

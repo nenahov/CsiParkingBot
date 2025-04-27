@@ -21,7 +21,7 @@ weather_map = {
     "02": "⛅️",
     "03": "⛅️",
     "04": "🌥️",
-    "09": "🌈",
+    "09": "🌦️",
     "10": "🌧️",
     "11": "⛈️",
     "13": "🌨️",
@@ -32,6 +32,26 @@ weather_map = {
 class WeatherService:
     def __init__(self):
         pass
+
+    async def get_weather_string(self, day: date) -> (str, str):
+        response = requests.get(BASE_URL, params=params)
+        data = response.json()
+        logger.debug(f"{data}")
+        day_request = day.strftime("%Y-%m-%d")
+        result = ""
+        desc = ""
+        for forecast in data["list"]:
+            date = forecast["dt_txt"].split()[0]
+            if date == day_request:
+                time = forecast["dt_txt"].split()[1][:5]
+                temp = str(int(forecast["main"]["temp"]))
+                icon = forecast["weather"][0]["icon"][:2]
+                if result == "" or time == "12:00":
+                    result = f"{temp}{weather_map.get(icon, '')}"
+                    desc = forecast["weather"][0]["description"]
+                if time == "12:00":
+                    return result, desc
+        return result, desc
 
     async def get_weather_content(self, day: date):
         response = requests.get(BASE_URL, params=params)

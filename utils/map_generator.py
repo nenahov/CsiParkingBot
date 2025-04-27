@@ -1,9 +1,11 @@
 import random
+from datetime import date
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
+from services.weather_service import WeatherService
 from utils.cars_generator import get_car
 
 # Цвета для разных статусов
@@ -33,8 +35,8 @@ garbage_truck_frames = [(-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0),
                         (270, 180, 250), (475, 220, 270), (830, 218, 270), (980, 215, 240),
                         (1030, 245, 184), (1042, 460, 180), (1042, 610, 200)]
 
-dx = 2
-dy = 2
+dx = 0
+dy = 0
 d_width = -1
 
 cars = Image.open("./pics/cars.png").convert("RGBA")
@@ -42,24 +44,22 @@ cars = Image.open("./pics/cars.png").convert("RGBA")
 # cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 # img = Image.new('RGB', (800, 600), (255, 255, 255))
 parking_img = Image.open("./pics/parking.png")
+parking_r_img = Image.open("./pics/parking_r.png")
 
 try:
-    font = ImageFont.truetype("arial.ttf", 12)
-except:
+    font = ImageFont.truetype("./pics/NotoColorEmoji.ttf", 109)
+except Exception as e:
     font = ImageFont.load_default()
+    print("Ошибка загрузки шрифта NotoColorEmoji.ttf", e)
 
 
-def generate_parking_map(parking_spots,
+async def generate_parking_map(parking_spots,
                          reservations_data,
                          driver: Driver,
                          use_spot_status: bool = True,
-                         frame_index: int = None):
+                               frame_index: int = None,
+                               day: date = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 8)
-    except:
-        font = ImageFont.load_default()
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
@@ -134,10 +134,6 @@ def generate_parking_map(parking_spots,
             overlay.paste(shadow, shadow_position, mask=car_image)
             overlay.paste(car_image, (dx + car_x, dy + car_y), mask=car_image)
 
-        # Добавляем текст
-        # text = f"Место {spot.id}\n\n{reserved_by or 'Свободно'}"
-        # draw.text((dx + spot.x + 2, dy + spot.y + 5), text, font=font, fill=COLORS['text'])
-
     if frame_index:
         # Рисуем мусорку
         garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
@@ -163,7 +159,15 @@ def generate_parking_map(parking_spots,
         overlay.paste(shadow, shadow_position, mask=garbage_truck)
         overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
-    result = Image.alpha_composite(parking_img, overlay)
+    # Добавляем текст
+    weather, desc = await WeatherService().get_weather_string(day)
+    draw = ImageDraw.Draw(overlay)
+    draw.text((8, 57), text=weather, font=font, embedded_color=True)
+
+    if "дожд" in desc:
+        result = Image.alpha_composite(parking_r_img, overlay)
+    else:
+        result = Image.alpha_composite(parking_img, overlay)
 
     return result
 
