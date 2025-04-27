@@ -81,26 +81,26 @@ async def generate_parking_map(parking_spots,
         if 1 <= spot.id <= 17:
             x = 120 + int((spot.id - 1) * 51)
             y = 520
-            car_x = x + 3
+            car_x = x + 2
             car_y = y + 14
             car_rotate = 0
         elif 18 <= spot.id <= 34:
             x = 171 + int((spot.id - 18) * 51)
             y = 371
-            car_x = x + 3
+            car_x = x + 2
             car_y = y + 3
             car_rotate = 180
         elif 35 <= spot.id <= 51:
             x = 171 + int((spot.id - 35) * 51)
             y = 270
-            car_x = x + 3
+            car_x = x + 2
             car_y = y + 14
             car_rotate = 0
         elif spot.id == 74:
             x = 17
             y = 220
-            car_x = x + 3
-            car_y = y + 5
+            car_x = x + 2
+            car_y = y + 2
             car_rotate = -90
         overlay.paste(pattern, (dx + x, dy + y))
 

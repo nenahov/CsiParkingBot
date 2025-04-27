@@ -1,6 +1,9 @@
 import io
+import random
 
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageDraw
+from moviepy import ImageSequenceClip
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 cars_count = 24
@@ -109,3 +112,119 @@ def extract_sprite(sprite_sheet, sprite_rect):
     :return: Извлечённое изображение спрайта
     """
     return sprite_sheet.crop(sprite_rect)
+
+
+def draw_race_track(lane_count=4, lane_height=70, track_length=800,
+                    bg_color=(50, 50, 50), separator_color=(255, 255, 255),
+                    start_color=(0, 200, 0), finish_color=(200, 0, 0),
+                    separator_width=2, boundary_width=5):
+    """
+    Рисует прямую гоночную трассу.
+
+    :param lane_count: число полос
+    :param lane_height: высота одной полосы в пикселях
+    :param track_length: длина трассы в пикселях
+    :param bg_color: цвет фона трассы (RGB)
+    :param separator_color: цвет разделительных линий (RGB)
+    :param start_color: цвет линии старта (RGB)
+    :param finish_color: цвет линии финиша (RGB)
+    :param separator_width: ширина разделительных линий
+    :param boundary_width: ширина линий старта/финиша
+    """
+    img_height = lane_count * lane_height
+    img = Image.new('RGB', (track_length, img_height), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    # Разметка полос: горизонтальные линии
+    for i in range(1, lane_count):
+        y = i * lane_height
+        draw.line([(0, y), (track_length, y)], fill=separator_color, width=separator_width)
+
+    # for i in range(0, lane_count):
+    #     y = i * lane_height
+    #     car_image = get_car(random.randint(0, cars_count - 1))
+    #     car_image = car_image.rotate(270, expand=True)
+    #     img.paste(car_image, (1, y + 8), mask=car_image)
+
+    # Линия старта – слева
+    draw.line([(105, 0), (105, img_height)], fill=start_color, width=boundary_width)
+    # Линия финиша – справа
+    draw.line([(track_length - 1, 0), (track_length - 1, img_height)], fill=finish_color, width=boundary_width)
+    return img
+
+
+def create_race_gif(output_path='race.gif', frame_count=50, duration=100):
+    """
+    Создаёт GIF с "гонкой" машин по нарисованной трассе.
+
+    :param output_path: куда сохранить итоговый GIF
+    :param frame_count: число кадров в анимации
+    :param duration: длительность одного кадра в миллисекундах
+    """
+    # Загружаем изображения машин
+    car_w, car_h = (100, 50)
+    lane_count = 10
+
+    # Рисуем фон — трассу
+    track = draw_race_track(lane_count=lane_count,
+                            lane_height=70,
+                            track_length=1800).convert('RGBA')
+
+    max_x = float(track.width - car_w)
+    # Различные базовые скорости для разнообразия гонки
+    speed_factors = [1.0 + random.uniform(0, 0.7) for _ in range(lane_count)]
+    base_speeds = [max_x / frame_count * f for f in speed_factors]
+    positions = [0.0] * lane_count
+    np_frames = []
+    winners = list()
+    frames = []
+    for _ in range(frame_count):
+        frame = track.copy()
+        for idx in range(0, lane_count):
+            car = get_car(idx * 5 + 4)
+            car = car.rotate(270, expand=True)
+            # Немного «джиттера», чтобы машины подрезали друг друга
+            jitter = 0.0  # random.uniform(-0.5, 2.0)
+            part_before = 4 * positions[idx] // max_x
+            positions[idx] = min(max_x, positions[idx] + base_speeds[idx] + jitter)
+            x = int(positions[idx])
+            part_after = 4 * positions[idx] // max_x
+            if part_before != part_after:
+                speed = 1.0 + random.uniform(0, 0.7)
+                base_speeds[idx] = max_x / frame_count * speed
+            # Вертикаль: центрируем машину в своей полосе
+            y = idx * 70 + (70 - car_h) // 2
+            frame.paste(car, (x, y), car)
+            if positions[idx] >= max_x and idx not in winners:
+                winners.append(idx)
+        # Для GIF конвертируем в P-палитру
+        frames.append(frame.convert('P'))
+        np_frames.append(np.asarray(frame))
+
+    # Сохраняем в GIF
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration,
+        loop=0
+    )
+    print(f"Сохранено: {output_path}")
+    print(*[w + 1 for w in winners])
+
+    clip = ImageSequenceClip(np_frames, fps=60)
+    clip.write_videofile(
+        "race.mp4",
+        codec="libx264",
+        ffmpeg_params=["-movflags", "faststart"],
+        audio=False
+    )
+
+
+if __name__ == "__main__":
+    # Пример: 5 полос
+    # track = draw_race_track(lane_count=5)
+    # track.save("race_track.png")
+    # track.show()
+    # случайная гонка, выставляем seed на текущее время
+    create_race_gif(output_path="race.gif", frame_count=400, duration=2)
