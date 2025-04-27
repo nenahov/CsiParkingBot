@@ -1,6 +1,6 @@
 import random
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
@@ -118,7 +118,23 @@ def generate_parking_map(parking_spots,
             if scale != 1:
                 new_size = (int(car_image.width * scale), int(car_image.height * scale))
                 car_image = car_image.resize(new_size)
-            car_image = car_image.rotate(car_rotate + random.randint(-5, 5), expand=True)
+            car_image = car_image.rotate(car_rotate + random.randint(-2, 2), expand=True)
+            # Создаем тень
+            shadow = car_image.copy()
+
+            # Делаем тень черной и полупрозрачной
+            shadow = shadow.convert('L')  # конвертируем в градации серого
+            shadow = ImageEnhance.Brightness(shadow).enhance(0.3)  # затемняем
+            shadow = shadow.convert('RGBA')
+
+            # Добавляем размытие
+            shadow = shadow.filter(ImageFilter.GaussianBlur(radius=5))
+
+            # Смещаем тень относительно машины
+            shadow_position = (car_x + 5, car_y + 5)
+
+            # Накладываем тень
+            overlay.paste(shadow, shadow_position, mask=car_image)
             overlay.paste(car_image, (car_x, car_y), mask=car_image)
 
         # Добавляем текст
@@ -134,8 +150,24 @@ def generate_parking_map(parking_spots,
             garbage_truck = garbage_truck.resize(new_size)
         frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
         garbage_truck = garbage_truck.rotate(frame[2], expand=True)
-        overlay.paste(garbage_truck, (frame[0] + random.randint(-5, 5), frame[1] + random.randint(0, 5)),
-                      mask=garbage_truck)
+        pos = (frame[0] + random.randint(-5, 5), frame[1] + random.randint(0, 5))
+        # Создаем тень
+        shadow = garbage_truck.copy()
+
+        # Делаем тень черной и полупрозрачной
+        shadow = shadow.convert('L')  # конвертируем в градации серого
+        shadow = ImageEnhance.Brightness(shadow).enhance(0.3)  # затемняем
+        shadow = shadow.convert('RGBA')
+
+        # Добавляем размытие
+        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=5))
+
+        # Смещаем тень относительно машины
+        shadow_position = (pos[0] + 8, pos[1] + 8)
+
+        # Накладываем тень
+        overlay.paste(shadow, shadow_position, mask=garbage_truck)
+        overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
     result = Image.alpha_composite(parking_img, overlay)
 
