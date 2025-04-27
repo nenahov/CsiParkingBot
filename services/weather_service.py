@@ -38,20 +38,21 @@ class WeatherService:
         data = response.json()
         logger.debug(f"{data}")
         day_request = day.strftime("%Y-%m-%d")
-        result = ""
+        temp = ""
+        icon = ""
         desc = ""
         for forecast in data["list"]:
             date = forecast["dt_txt"].split()[0]
             if date == day_request:
                 time = forecast["dt_txt"].split()[1][:5]
-                temp = str(int(forecast["main"]["temp"]))
-                icon = forecast["weather"][0]["icon"][:2]
-                if result == "" or time == "12:00":
-                    result = f"{temp}{weather_map.get(icon, '')}"
+                if temp == "" or time == "12:00":
+                    temp = f"{int(forecast["main"]["temp"]):+d}°".rjust(4, " ")
+                    icon = forecast["weather"][0]["icon"][:2]
+                    icon = f"{weather_map.get(icon, '')}"
                     desc = forecast["weather"][0]["description"]
                 if time == "12:00":
-                    return result, desc
-        return result, desc
+                    return temp, icon, desc
+        return temp, icon, desc
 
     async def get_weather_content(self, day: date):
         response = requests.get(BASE_URL, params=params)
@@ -66,7 +67,7 @@ class WeatherService:
             if date == day_request:
                 is_ok = True
                 time = forecast["dt_txt"].split()[1][:5]
-                temp = str(int(forecast["main"]["temp"])).rjust(3, " ")
+                temp = f"{int(forecast["main"]["temp"]):+d}".rjust(3, " ")
                 desc = forecast["weather"][0]["description"]
                 icon = forecast["weather"][0]["icon"][:2]
                 content += Code(f"\n{time} {temp}°C {weather_map.get(icon, "")} {desc}")
@@ -98,7 +99,7 @@ class WeatherService:
 
             for forecast in forecast_by_date[day_str]:
                 time_str = forecast["dt_txt"].split()[1][:5]
-                temp = str(int(forecast["main"]["temp"])).rjust(3, " ")
+                temp = f"{int(forecast["main"]["temp"]):+d}".rjust(3, " ")
                 desc = forecast["weather"][0]["description"]
                 icon = forecast["weather"][0]["icon"][:2]
                 day_content += Code(f"\n{time_str} {temp}°C {weather_map.get(icon, '')} {desc}")

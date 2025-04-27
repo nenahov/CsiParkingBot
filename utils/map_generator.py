@@ -46,10 +46,11 @@ cars = Image.open("./pics/cars.png").convert("RGBA")
 parking_img = Image.open("./pics/parking.png")
 parking_r_img = Image.open("./pics/parking_r.png")
 
+regular_font = ImageFont.load_default(60)
 try:
-    font = ImageFont.truetype("./pics/NotoColorEmoji.ttf", 109)
+    emoji_font = ImageFont.truetype("./pics/NotoColorEmoji.ttf", 109)
 except Exception as e:
-    font = ImageFont.load_default()
+    emoji_font = ImageFont.load_default()
     print("Ошибка загрузки шрифта NotoColorEmoji.ttf", e)
 
 
@@ -160,9 +161,10 @@ async def generate_parking_map(parking_spots,
         overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
     # Добавляем текст
-    weather, desc = await WeatherService().get_weather_string(day)
+    temp, weather, desc = await WeatherService().get_weather_string(day)
     draw = ImageDraw.Draw(overlay)
-    draw.text((8, 57), text=weather, font=font, embedded_color=True)
+    draw.text((17, 80), text=temp, font=regular_font, fill=COLORS['text'])
+    draw.text((140, 57), text=weather, font=emoji_font, embedded_color=True)
 
     if "дожд" in desc:
         result = Image.alpha_composite(parking_r_img, overlay)
