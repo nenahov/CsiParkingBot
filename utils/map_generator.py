@@ -33,8 +33,8 @@ garbage_truck_frames = [(-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0),
                         (270, 180, 250), (475, 220, 270), (830, 218, 270), (980, 215, 240),
                         (1030, 245, 184), (1042, 460, 180), (1042, 610, 200)]
 
-dx = -28
-dy = -16
+dx = 2
+dy = 2
 d_width = -1
 
 cars = Image.open("./pics/cars.png").convert("RGBA")
@@ -72,8 +72,8 @@ def generate_parking_map(parking_spots,
                                           color1=(255, 255, 255, 0))
 
         # Вставляем паттерн в прямоугольник
-        x = dx + spot.x
-        y = dy + spot.y
+        x = spot.x
+        y = spot.y
         car_x = -1000
         car_y = -1000
         car_rotate = 0
@@ -101,7 +101,7 @@ def generate_parking_map(parking_spots,
             car_x = x + 3
             car_y = y + 5
             car_rotate = -90
-        overlay.paste(pattern, (x, y))
+        overlay.paste(pattern, (dx + x, dy + y))
 
         if (use_spot_status
                 and spot.current_driver_id is not None
@@ -128,11 +128,11 @@ def generate_parking_map(parking_spots,
             shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
 
             # Смещаем тень относительно машины
-            shadow_position = (car_x + 5, car_y + 5)
+            shadow_position = (dx + car_x + 5, dy + car_y + 5)
 
             # Накладываем тень
             overlay.paste(shadow, shadow_position, mask=car_image)
-            overlay.paste(car_image, (car_x, car_y), mask=car_image)
+            overlay.paste(car_image, (dx + car_x, dy + car_y), mask=car_image)
 
         # Добавляем текст
         # text = f"Место {spot.id}\n\n{reserved_by or 'Свободно'}"
@@ -147,7 +147,7 @@ def generate_parking_map(parking_spots,
             garbage_truck = garbage_truck.resize(new_size)
         frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
         garbage_truck = garbage_truck.rotate(frame[2], expand=True)
-        pos = (frame[0] + random.randint(-5, 5), frame[1] + random.randint(0, 5))
+        pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
         # Создаем тень
         shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
         shadow.putalpha(garbage_truck.split()[3])
