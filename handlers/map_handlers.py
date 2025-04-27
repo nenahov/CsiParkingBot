@@ -18,7 +18,7 @@ from utils.map_generator import generate_parking_map
 router = Router()
 
 
-@router.message(F.text.regexp(r"(?i)(.*пока.* карт(а|у) на завтра)|(.*карт(а|у) парковки на завтра)"),
+@router.message(F.text.regexp(r"(?i)(.*пока.* (схем|карт)(а|у) на завтра)|(.*(схем|карт)(а|у) парковки на завтра)"),
                 flags={"long_operation": "upload_photo", "check_driver": True})
 async def map_tomorrow_command(message: Message, session, driver, current_day, is_private):
     day = current_day + timedelta(days=1)
@@ -30,7 +30,7 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
 
     # Генерируем карту
     img = await generate_parking_map(parking_spots=spots, reservations_data=reservations,
-                               driver=driver if is_private else None,
+                                     driver=driver if is_private else None,
                                      use_spot_status=False, frame_index=frame_index,
                                      day=day
                                      )
@@ -39,19 +39,22 @@ async def map_tomorrow_command(message: Message, session, driver, current_day, i
     img.save(img_buffer, format="PNG")
     img_buffer.seek(0)
 
+    builder = InlineKeyboardBuilder()
+    if is_private:
+        add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
+
     # Отправка изображения
     await message.answer_photo(
         BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
         caption=f"Карта парковки на завтра {day.strftime('%a %d.%m.%Y')}\n\n"
                 f"🔴 - забронировано\n"
                 f"{'🟡 - забронировано Вами\n' if is_private else ''}"
-                f"🟢 - свободно"
+                f"🟢 - свободно",
+        reply_markup=builder.as_markup()
     )
-    if is_private:
-        await spot_selection(message, session, driver, True)
 
 
-@router.message(or_f(Command("map"), F.text.regexp(r"(?i)(.*пока.* карт(а|у))|(.*карт(а|у) парковки)")),
+@router.message(or_f(Command("map"), F.text.regexp(r"(?i)(.*пока.* (схем|карт)(а|у))|(.*(схем|карт)(а|у) парковки)")),
                 flags={"long_operation": "upload_photo", "check_driver": True})
 async def map_command(message: Message, session, driver, current_day, is_private):
     # Получаем данные для карты
