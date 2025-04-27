@@ -1,6 +1,6 @@
 import random
 
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
@@ -120,15 +120,12 @@ def generate_parking_map(parking_spots,
                 car_image = car_image.resize(new_size)
             car_image = car_image.rotate(car_rotate + random.randint(-2, 2), expand=True)
             # Создаем тень
-            shadow = car_image.copy()
-
-            # Делаем тень черной и полупрозрачной
-            shadow = shadow.convert('L')  # конвертируем в градации серого
-            shadow = ImageEnhance.Brightness(shadow).enhance(0.3)  # затемняем
-            shadow = shadow.convert('RGBA')
-
-            # Добавляем размытие
-            shadow = shadow.filter(ImageFilter.GaussianBlur(radius=5))
+            shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
+            shadow.putalpha(car_image.split()[3])
+            shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
+            shadow.putalpha(car_image.split()[3])
+            blur_radius = 10  # радиус размытия тени
+            shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
 
             # Смещаем тень относительно машины
             shadow_position = (car_x + 5, car_y + 5)
@@ -152,15 +149,12 @@ def generate_parking_map(parking_spots,
         garbage_truck = garbage_truck.rotate(frame[2], expand=True)
         pos = (frame[0] + random.randint(-5, 5), frame[1] + random.randint(0, 5))
         # Создаем тень
-        shadow = garbage_truck.copy()
-
-        # Делаем тень черной и полупрозрачной
-        shadow = shadow.convert('L')  # конвертируем в градации серого
-        shadow = ImageEnhance.Brightness(shadow).enhance(0.3)  # затемняем
-        shadow = shadow.convert('RGBA')
-
-        # Добавляем размытие
-        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=5))
+        shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
+        shadow.putalpha(garbage_truck.split()[3])
+        shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
+        shadow.putalpha(garbage_truck.split()[3])
+        blur_radius = 10  # радиус размытия тени
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
 
         # Смещаем тень относительно машины
         shadow_position = (pos[0] + 8, pos[1] + 8)
