@@ -2,7 +2,7 @@ import io
 import random
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps, ImageFilter
 from moviepy import ImageSequenceClip
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
@@ -153,7 +153,7 @@ def draw_race_track(lane_count=4, lane_height=70, track_length=800,
     return img
 
 
-def create_race_gif(output_path='race.gif', frame_count=50, duration=100):
+def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration=100):
     """
     Создаёт GIF с "гонкой" машин по нарисованной трассе.
 
@@ -163,11 +163,12 @@ def create_race_gif(output_path='race.gif', frame_count=50, duration=100):
     """
     # Загружаем изображения машин
     car_w, car_h = (100, 50)
-    lane_count = 10
+    lane_count = len(cars_icons)
 
     # Рисуем фон — трассу
     track = draw_race_track(lane_count=lane_count,
                             lane_height=70,
+                            bg_color=(120, 120, 120),
                             track_length=1800).convert('RGBA')
 
     max_x = float(track.width - car_w)
@@ -181,22 +182,22 @@ def create_race_gif(output_path='race.gif', frame_count=50, duration=100):
     for _ in range(frame_count):
         frame = track.copy()
         for idx in range(0, lane_count):
-            car = get_car(idx * 5 + 4)
+            car = get_car(cars_icons[idx])
             car = car.rotate(270, expand=True)
-            # Немного «джиттера», чтобы машины подрезали друг друга
-            jitter = 0.0  # random.uniform(-0.5, 2.0)
-            part_before = 4 * positions[idx] // max_x
-            positions[idx] = min(max_x, positions[idx] + base_speeds[idx] + jitter)
+            part_before = 3 * positions[idx] // max_x
+            positions[idx] = positions[idx] + base_speeds[idx]
             x = int(positions[idx])
-            part_after = 4 * positions[idx] // max_x
+            part_after = 3 * positions[idx] // max_x
             if part_before != part_after:
                 speed = 1.0 + random.uniform(0, 0.7)
                 base_speeds[idx] = max_x / frame_count * speed
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
-            frame.paste(car, (x, y), car)
-            if positions[idx] >= max_x and idx not in winners:
-                winners.append(idx)
+            draw_car_with_shadow(car, frame, x, y)
+            if positions[idx] >= max_x:
+                draw_car_with_shadow(car, frame, 0, y)
+                if idx not in winners:
+                    winners.append(idx)
         # Для GIF конвертируем в P-палитру
         frames.append(frame.convert('P'))
         np_frames.append(np.asarray(frame))
@@ -221,10 +222,28 @@ def create_race_gif(output_path='race.gif', frame_count=50, duration=100):
     )
 
 
+def draw_car_with_shadow(car_image, frame, car_x, car_y):
+    # Создаем тень
+    shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
+    shadow.putalpha(car_image.split()[3])
+    shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
+    shadow.putalpha(car_image.split()[3])
+    blur_radius = 10  # радиус размытия тени
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+
+    # Смещаем тень относительно машины
+    shadow_position = (car_x + 5, car_y + 5)
+
+    # Накладываем тень
+    frame.paste(shadow, shadow_position, mask=car_image)
+    frame.paste(car_image, (car_x, car_y), car_image)
+
+
 if __name__ == "__main__":
     # Пример: 5 полос
     # track = draw_race_track(lane_count=5)
     # track.save("race_track.png")
     # track.show()
     # случайная гонка, выставляем seed на текущее время
-    create_race_gif(output_path="race.gif", frame_count=400, duration=2)
+    create_race_gif(cars_icons=[0, 5, 7, 11, 27, 135, 12, 1, 2, 3, 4, 5],
+                    output_path="race.gif", frame_count=400, duration=2)

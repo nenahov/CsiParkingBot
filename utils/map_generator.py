@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
-from utils.cars_generator import get_car
+from utils.cars_generator import get_car, draw_car_with_shadow
 
 # Цвета для разных статусов
 COLORS = {
@@ -55,9 +55,9 @@ except Exception as e:
 
 
 async def generate_parking_map(parking_spots,
-                         reservations_data,
-                         driver: Driver,
-                         use_spot_status: bool = True,
+                               reservations_data,
+                               driver: Driver,
+                               use_spot_status: bool = True,
                                frame_index: int = None,
                                day: date = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
@@ -119,21 +119,8 @@ async def generate_parking_map(parking_spots,
             if scale != 1:
                 new_size = (int(car_image.width * scale), int(car_image.height * scale))
                 car_image = car_image.resize(new_size)
-            car_image = car_image.rotate(car_rotate + random.randint(-2, 2), expand=True)
-            # Создаем тень
-            shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
-            shadow.putalpha(car_image.split()[3])
-            shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
-            shadow.putalpha(car_image.split()[3])
-            blur_radius = 10  # радиус размытия тени
-            shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
-
-            # Смещаем тень относительно машины
-            shadow_position = (dx + car_x + 5, dy + car_y + 5)
-
-            # Накладываем тень
-            overlay.paste(shadow, shadow_position, mask=car_image)
-            overlay.paste(car_image, (dx + car_x, dy + car_y), mask=car_image)
+            car_image = car_image.rotate(car_rotate, expand=True)
+            draw_car_with_shadow(car_image, overlay, dx + car_x, dy + car_y)
 
     if frame_index:
         # Рисуем мусорку
