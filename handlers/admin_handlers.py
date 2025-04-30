@@ -61,8 +61,8 @@ async def plus_karma(message: Message, session: AsyncSession, driver: Driver, cu
         driver_to.attributes["karma"] = driver_to.attributes.get("karma", 0) + karma
         await message.answer(
             f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
-        await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to, match.group(2),
-                                                             0, karma)
+        await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to,
+                                                             add_message=match.group(2), karma_change=karma)
         await AuditService(session).log_action(driver_to.id, UserActionType.GET_ADMIN_KARMA, current_day, karma,
                                                f"Админ {driver.title} изменил карму {driver_to.title} на {karma} и стало {driver_to.attributes["karma"]}")
     else:

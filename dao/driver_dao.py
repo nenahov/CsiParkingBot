@@ -76,17 +76,18 @@ class DriverDAO:
             .limit(limit))
         return result.scalars().all()
 
-    async def get_absent_drivers_for_auto_karma(self) -> Sequence[Driver]:
-        # Выбираем водителей, которые отсутствуют на текущую дату
+    async def get_absent_drivers_for_auto_karma(self, is_working_day: bool) -> Sequence[Driver]:
+        # Выбираем водителей, которые отсутствуют на текущую дату (или сегодня выходной)
         target_date = date.today()
         # И у которых в атрибуте есть значение "plus" >= 0
-        result = await self.session.execute(
-            select(Driver)
-            .filter(Driver.absent_until.is_not(None))
-            .filter(Driver.absent_until > target_date)
-            .filter(func.json_extract(Driver.attributes, '$.plus').isnot(None))
-            .filter(func.json_extract(Driver.attributes, '$.plus') >= 0)
-        )
+        sql = (select(Driver)
+               .filter(func.json_extract(Driver.attributes, '$.plus').isnot(None))
+               .filter(func.json_extract(Driver.attributes, '$.plus') >= 0))
+        if is_working_day:
+            sql = (sql
+                   .filter(Driver.absent_until.is_not(None))
+                   .filter(Driver.absent_until > target_date))
+        result = await self.session.execute(sql)
         return result.scalars().all()
 
     async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:

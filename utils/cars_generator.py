@@ -244,6 +244,5 @@ if __name__ == "__main__":
     # track = draw_race_track(lane_count=5)
     # track.save("race_track.png")
     # track.show()
-    # случайная гонка, выставляем seed на текущее время
-    create_race_gif(cars_icons=[0, 5, 7, 11, 27, 135, 12, 1, 2, 3, 4, 5],
+    create_race_gif(cars_icons=[0, 5, 7, 11, 27, 135, 12, 1, 2, 3],
                     output_path="race.gif", frame_count=400, duration=2)

@@ -87,7 +87,6 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
             builder.add(InlineKeyboardButton(text="🫶 Доберись до парковки 🅿️", callback_data=f"game_parking"))
             keyboard_sizes.append(1)
 
-
     builder.adjust(*keyboard_sizes)
 
     content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
@@ -228,7 +227,7 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
         for owner in spot.drivers:
             if owner.id != driver.id:
                 active_partners.discard(owner)
-                if await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, "", spot.id, 0):
+                if await notification_sender.send_to_driver(EventType.SPOT_RELEASED, driver, owner, spot_id=spot.id):
                     content, builder = await get_status_message(owner, True, session, current_day)
                     await event.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
     for partner in active_partners:
@@ -380,11 +379,11 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
     for owner in spot.drivers:
         if owner.id != driver.id:
             partners.discard(owner)
-            if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, "", spot.id, 0):
+            if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, owner, spot_id=spot.id):
                 content, builder = await get_status_message(owner, True, session, current_day)
                 await callback.bot.send_message(owner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
     for partner in partners:
-        if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, partner, "", spot.id, 0):
+        if await notification_sender.send_to_driver(EventType.SPOT_OCCUPIED, driver, partner, spot_id=spot.id):
             content, builder = await get_status_message(partner, True, session, current_day)
             await callback.bot.send_message(partner.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
 

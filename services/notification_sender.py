@@ -20,6 +20,11 @@ class EventType(PyEnum):
                        "Также доступна кнопочка кармы 😉",
                "button_text": "Новый день",
                "description": f"Присылается, когда начинается новый день (в {constants.new_day_begin_hour}:00)."}
+    NEW_HOLIDAY = {"text": "🔔 Наступил новый день {my_date}\n\n"
+                           "{txt}"
+                           "Доступна кнопочка кармы 😉",
+                   "button_text": "Новый день (выходной/праздник)",
+                   "description": f"Присылается накануне выходного (в {constants.new_day_begin_hour}:00)."}
     SPOT_OCCUPIED = {"text": "🔔 Место {spot_id} занял{suffix} {driver_from.description}",
                      "button_text": "Заняли Ваше место",
                      "description": "Присылается, когда кто-то занял место, закрепленное за Вами."}
@@ -56,10 +61,14 @@ class NotificationSender:
     def __init__(self, bot: Bot):
         self.bot = bot
 
-    async def send_to_driver(self, event_type: EventType,
-                             driver_from: Driver, driver_to: Driver,
-                             add_message=None,
-                             spot_id: int = 0, karma_change: int = 0, my_date: str = None,
+    async def send_to_driver(self, event_type: EventType, /,
+                             driver_from: Driver,
+                             driver_to: Driver,
+                             *, add_message=None,
+                             spot_id: int = 0,
+                             karma_change: int = 0,
+                             my_date: str = None,
+                             txt: str = None,
                              keyboard: InlineKeyboardMarkup = None) -> bool:
         """Отправка уведомления водителю с опциональной клавиатурой."""
         # Проверка наличия разрешения на принятие данного типа уведомления от бота у водителя driver_to
@@ -70,7 +79,7 @@ class NotificationSender:
         suffix = "а" if is_woman else ""
         message = Text()
         message += event_type.value["text"].format(spot_id=spot_id, driver_from=driver_from, driver_to=driver_to,
-                                                  karma_change=karma_change, suffix=suffix, my_date=my_date)
+                                                   karma_change=karma_change, suffix=suffix, my_date=my_date, txt=txt)
         if add_message is not None and add_message != "":
             message += "\n\n"
             message += add_message

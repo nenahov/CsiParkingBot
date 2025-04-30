@@ -76,8 +76,10 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
     test_driver.title = "ФИО_водителя"
     test_driver.description = "ФИО_водителя"
     test_driver.attributes = {}
-    await NotificationSender(event.bot).send_to_driver(EventType[callback_data.event_type], test_driver, driver, "",
-                                                       0, 0, current_day.strftime('%a %d.%m.%Y'))
+    await NotificationSender(event.bot).send_to_driver(EventType[callback_data.event_type], test_driver, driver,
+                                                       add_message="",
+                                                       spot_id=0, karma_change=0,
+                                                       my_date=current_day.strftime('%a %d.%m.%Y'), txt='Выходной\n\n')
     await event.answer()
 
 

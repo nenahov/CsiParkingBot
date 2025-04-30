@@ -8,6 +8,7 @@ from handlers.user_handlers import get_status_message
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.driver_service import DriverService
+from services.holiday_service import HolidayService
 from services.notification_sender import NotificationSender, EventType
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
@@ -49,15 +50,21 @@ async def check_current_day(bot, session, param_service):
 
     # устанавливаем текущий день
     await param_service.set_parameter("current_day", current_day_str)
+    is_working_day, holiday = await HolidayService().get_day_info(current_day)
+    await param_service.set_parameter("current_day_is_working_day", str(is_working_day))
+    await param_service.set_parameter("current_day_holiday", holiday)
     await session.commit()
 
     weather = await WeatherService().get_weather_content(current_day)
+
     # уведомляем всех водителей
     notification_sender = NotificationSender(bot)
     for driver in drivers:
-        if await notification_sender.send_to_driver(EventType.NEW_DAY, driver, driver,
+        if await notification_sender.send_to_driver(EventType.NEW_DAY if is_working_day else EventType.NEW_HOLIDAY,
+                                                    driver, driver,
                                                     add_message=weather,
-                                                    my_date=current_day.strftime('%a %d.%m.%Y')):
+                                                    my_date=current_day.strftime('%a %d.%m.%Y'),
+                                                    txt=(holiday + '\n\n') if holiday else ""):
             content, builder = await get_status_message(driver, True, session, current_day)
             await bot.send_message(driver.chat_id, **content.as_kwargs(), reply_markup=builder.as_markup())
             await asyncio.sleep(0.1)
@@ -77,13 +84,18 @@ async def check_auto_karma_for_absent(bot, session, param_service, current_day):
 
     await param_service.set_parameter("current_day_auto_karma", current_day_str)
     await session.commit()
+    is_working_day = (await param_service.get_parameter("current_day_is_working_day")).lower() in ("yes", "true", "t",
+                                                                                                   "1")
+    logger.debug(f"is_working_day = {is_working_day}")
 
     driver_service = DriverService(session)
-    drivers = await driver_service.get_absent_drivers_for_auto_karma()
+    drivers = await driver_service.get_absent_drivers_for_auto_karma(is_working_day)
     for driver in drivers:
         try:
             await bot.send_message(chat_id=driver.chat_id, text="🎲 Вы не нажали на Розыгрыш кармы сегодня."
-                                                                "\n\n🫶 Но т.к. Вы уехали, мы сделаем это за Вас!")
+                                                                "\n\n🫶 Но т.к. "
+                                                                f"{'Вы уехали' if is_working_day else 'сегодня выходной'}"
+                                                                ", мы сделаем это за Вас!")
             data = await bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
             driver.attributes["plus"] = -1
             driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
