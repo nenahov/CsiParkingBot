@@ -81,6 +81,7 @@ class DriverDAO:
         target_date = date.today()
         # И у которых в атрибуте есть значение "plus" >= 0
         sql = (select(Driver)
+               .filter(Driver.enabled.is_(True))
                .filter(func.json_extract(Driver.attributes, '$.plus').isnot(None))
                .filter(func.json_extract(Driver.attributes, '$.plus') >= 0))
         if is_working_day:

@@ -84,7 +84,8 @@ async def check_auto_karma_for_absent(bot, session, param_service, current_day):
 
     await param_service.set_parameter("current_day_auto_karma", current_day_str)
     await session.commit()
-    is_working_day = (await param_service.get_parameter("current_day_is_working_day")).lower() in ("yes", "true", "t",
+    is_working_day = (await param_service.get_parameter("current_day_is_working_day", "")).lower() in ("yes", "true",
+                                                                                                       "t",
                                                                                                    "1")
     logger.debug(f"is_working_day = {is_working_day}")
 

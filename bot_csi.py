@@ -12,6 +12,7 @@ from handlers import main_handlers, reservation_handlers, map_handlers, user_han
 from middlewares.admin_check import AdminCheckMiddleware
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
+from middlewares.lock_operation import LockOperationMiddleware
 from middlewares.logging_middleware import LoggingMiddleware
 from middlewares.long_operation import LongOperationMiddleware
 from middlewares.my_callback_check import MyCallbackCheckMiddleware
@@ -48,12 +49,15 @@ async def main():
     dp.message.middleware(NewDayCheckMiddleware())
     dp.message.middleware(DriverCheckMiddleware())
     dp.message.middleware(AdminCheckMiddleware())
+    dp.message.middleware(LockOperationMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
     dp.callback_query.middleware(MyCallbackCheckMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
     dp.callback_query.middleware(NewDayCheckMiddleware())
     dp.callback_query.middleware(DriverCheckMiddleware())
     dp.callback_query.middleware(AdminCheckMiddleware())
+    dp.callback_query.middleware(LongOperationMiddleware())
+    dp.callback_query.middleware(LockOperationMiddleware())
 
     dp.include_router(user_handlers.router)
     dp.include_router(map_handlers.router)

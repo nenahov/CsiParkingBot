@@ -153,6 +153,25 @@ def draw_race_track(lane_count=4, lane_height=70, track_length=800,
     return img
 
 
+def draw_start_race_track(cars_icons, lane_height=70, track_length=800,
+                          bg_color=(50, 50, 50), separator_color=(255, 255, 255),
+                          start_color=(0, 200, 0), finish_color=(200, 0, 0),
+                          separator_width=2, boundary_width=5):
+    """
+    Рисует прямую гоночную трассу с машинами на старте.
+    """
+    car_h = 50
+    img = draw_race_track(lane_count=len(cars_icons), lane_height=lane_height, track_length=track_length,
+                          bg_color=bg_color,
+                          separator_color=separator_color, start_color=start_color, finish_color=finish_color,
+                          separator_width=separator_width, boundary_width=boundary_width)
+    for idx, icon in enumerate(cars_icons):
+        y = idx * 70 + (70 - car_h) // 2
+        car = get_car(icon)
+        car = car.rotate(270, expand=True)
+        draw_car_with_shadow(car, img, 0, y)
+    return img
+
 def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration=100):
     """
     Создаёт GIF с "гонкой" машин по нарисованной трассе.
