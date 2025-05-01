@@ -2,11 +2,13 @@ import io
 import random
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps, ImageFilter
+from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont
 from moviepy import ImageSequenceClip
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 cars_count = 24
+regular_font = ImageFont.truetype("ariali.ttf", 40)
+car_w, car_h = (100, 50)
 
 
 def reduce_opacity(image: Image.Image, opacity: float) -> Image.Image:
@@ -114,14 +116,14 @@ def extract_sprite(sprite_sheet, sprite_rect):
     return sprite_sheet.crop(sprite_rect)
 
 
-def draw_race_track(lane_count=4, lane_height=70, track_length=800,
+def draw_race_track(players, lane_height=70, track_length=800,
                     bg_color=(50, 50, 50), separator_color=(255, 255, 255),
                     start_color=(0, 200, 0), finish_color=(200, 0, 0),
                     separator_width=2, boundary_width=5):
     """
     Рисует прямую гоночную трассу.
 
-    :param lane_count: число полос
+    :param players: список участников заезда
     :param lane_height: высота одной полосы в пикселях
     :param track_length: длина трассы в пикселях
     :param bg_color: цвет фона трассы (RGB)
@@ -131,15 +133,17 @@ def draw_race_track(lane_count=4, lane_height=70, track_length=800,
     :param separator_width: ширина разделительных линий
     :param boundary_width: ширина линий старта/финиша
     """
-    img_height = lane_count * lane_height
+    img_height = len(players) * lane_height
     img = Image.new('RGB', (track_length, img_height), bg_color)
     draw = ImageDraw.Draw(img)
 
     # Разметка полос: горизонтальные линии
-    for i in range(1, lane_count):
+    for i in range(1, len(players)):
         y = i * lane_height
         draw.line([(0, y), (track_length, y)], fill=separator_color, width=separator_width)
 
+    for idx, player in enumerate(players):
+        draw.text((car_w + 25, idx * 70 + 15), text=player.title, font=regular_font, fill=(200, 200, 200))
     # for i in range(0, lane_count):
     #     y = i * lane_height
     #     car_image = get_car(random.randint(0, cars_count - 1))
@@ -153,26 +157,26 @@ def draw_race_track(lane_count=4, lane_height=70, track_length=800,
     return img
 
 
-def draw_start_race_track(cars_icons, lane_height=70, track_length=800,
+def draw_start_race_track(players, lane_height=70, track_length=800,
                           bg_color=(50, 50, 50), separator_color=(255, 255, 255),
                           start_color=(0, 200, 0), finish_color=(200, 0, 0),
                           separator_width=2, boundary_width=5):
     """
     Рисует прямую гоночную трассу с машинами на старте.
     """
-    car_h = 50
-    img = draw_race_track(lane_count=len(cars_icons), lane_height=lane_height, track_length=track_length,
+    img = draw_race_track(players, lane_height=lane_height, track_length=track_length,
                           bg_color=bg_color,
                           separator_color=separator_color, start_color=start_color, finish_color=finish_color,
                           separator_width=separator_width, boundary_width=boundary_width)
-    for idx, icon in enumerate(cars_icons):
+    for idx, player in enumerate(players):
         y = idx * 70 + (70 - car_h) // 2
-        car = get_car(icon)
+        car = get_car(player.attributes.get("car_index", player.id))
         car = car.rotate(270, expand=True)
         draw_car_with_shadow(car, img, 0, y)
     return img
 
-def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration=100):
+
+def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=50, duration=100):
     """
     Создаёт GIF с "гонкой" машин по нарисованной трассе.
 
@@ -181,11 +185,10 @@ def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration
     :param duration: длительность одного кадра в миллисекундах
     """
     # Загружаем изображения машин
-    car_w, car_h = (100, 50)
-    lane_count = len(cars_icons)
+    lane_count = len(players)
 
     # Рисуем фон — трассу
-    track = draw_race_track(lane_count=lane_count,
+    track = draw_race_track(players=players,
                             lane_height=70,
                             bg_color=(120, 120, 120),
                             track_length=1800).convert('RGBA')
@@ -201,7 +204,7 @@ def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration
     for _ in range(frame_count):
         frame = track.copy()
         for idx in range(0, lane_count):
-            car = get_car(cars_icons[idx])
+            car = get_car(players[idx].attributes.get("car_index", players[idx].id))
             car = car.rotate(270, expand=True)
             part_before = 3 * positions[idx] // max_x
             positions[idx] = positions[idx] + base_speeds[idx]
@@ -229,16 +232,14 @@ def create_race_gif(cars_icons, output_path='race.gif', frame_count=50, duration
         duration=duration,
         loop=0
     )
-    print(f"Сохранено: {output_path}")
-    print(*[w + 1 for w in winners])
-
     clip = ImageSequenceClip(np_frames, fps=60)
     clip.write_videofile(
-        "race.mp4",
+        f"race_{chat_id}.mp4",
         codec="libx264",
         ffmpeg_params=["-movflags", "faststart"],
         audio=False
     )
+    return winners
 
 
 def draw_car_with_shadow(car_image, frame, car_x, car_y):
@@ -256,12 +257,3 @@ def draw_car_with_shadow(car_image, frame, car_x, car_y):
     # Накладываем тень
     frame.paste(shadow, shadow_position, mask=car_image)
     frame.paste(car_image, (car_x, car_y), car_image)
-
-
-if __name__ == "__main__":
-    # Пример: 5 полос
-    # track = draw_race_track(lane_count=5)
-    # track.save("race_track.png")
-    # track.show()
-    create_race_gif(cars_icons=[0, 5, 7, 11, 27, 135, 12, 1, 2, 3],
-                    output_path="race.gif", frame_count=400, duration=2)

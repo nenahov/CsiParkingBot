@@ -406,10 +406,11 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
         await show_status_callback(callback, session, driver, current_day, is_private)
         await asyncio.sleep(5 if is_private else 13)
         driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
-        await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
-                              show_alert=True)
         await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
                                                f"Розыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
+        await session.commit()
+        await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
+                              show_alert=True)
 
     await show_status_callback(callback, session, driver, current_day, is_private)
 
