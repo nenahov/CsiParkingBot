@@ -18,6 +18,7 @@ from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.driver_service import DriverService
 from services.notification_sender import NotificationSender, EventType, send_alarm, send_reply
+from services.param_service import ParamService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
@@ -83,8 +84,11 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
         add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
         keyboard_sizes.append(1)
         # В Сб и Вс доберись до парковки
-        if current_day.weekday() == 5 or current_day.weekday() == 6:
-            builder.add(InlineKeyboardButton(text="🫶 Доберись до парковки 🅿️", callback_data=f"game_parking"))
+        is_working_day = ((await ParamService(session).get_parameter("current_day_is_working_day", ""))
+                          .lower() in ("yes", "true", "t", "1"))
+        if not is_working_day:
+            builder.add(
+                InlineKeyboardButton(text="🅿️ Доберись до парковки (Играть за 1 💟)", callback_data=f"game_parking"))
             keyboard_sizes.append(1)
 
     builder.adjust(*keyboard_sizes)
