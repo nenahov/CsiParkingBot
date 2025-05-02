@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import constants
 from models.user_audit import UserActionType, UserAudit
 
 
@@ -25,13 +26,13 @@ class UserAuditDAO:
         return audit_record
 
     async def get_weekly_karma(self, limit: int):
-        stmt = text("""
+        stmt = text(f"""
                 select sum(num) as total, d.description
                 from user_audit ua
                 join drivers d on d.id = ua.driver_id
                 where action in ('DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA')
                   and current_day >= date('now','-7 days')
-                  and current_day <= date('now','-5 hour')
+                  and current_day < date('now','+{constants.new_day_offset} hour')
                   and d.id != :excluded_id
                 group by d.description
                 order by total desc, d.description
