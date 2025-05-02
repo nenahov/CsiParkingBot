@@ -47,7 +47,7 @@ class WeatherService:
                 if date == day_request:
                     time = forecast["dt_txt"].split()[1][:5]
                     if temp == "" or time == "12:00":
-                        temp = f"{int(forecast["main"]["temp"]):+d}°".rjust(4, " ")
+                        temp = f"{int(forecast["main"]["temp"]):+3d}°"
                         icon = forecast["weather"][0]["icon"][:2]
                         icon = f"{weather_map.get(icon, '')}"
                         desc = forecast["weather"][0]["description"]
@@ -71,7 +71,7 @@ class WeatherService:
                 if date == day_request:
                     is_ok = True
                     time = forecast["dt_txt"].split()[1][:5]
-                    temp = f"{int(forecast["main"]["temp"]):+d}".rjust(3, " ")
+                    temp = f"{int(forecast["main"]["temp"]):+3d}"
                     desc = forecast["weather"][0]["description"]
                     icon = forecast["weather"][0]["icon"][:2]
                     content += Code(f"\n{time} {temp}°C {weather_map.get(icon, "")} {desc}")
@@ -106,7 +106,7 @@ class WeatherService:
 
                 for forecast in forecast_by_date[day_str]:
                     time_str = forecast["dt_txt"].split()[1][:5]
-                    temp = f"{int(forecast["main"]["temp"]):+d}".rjust(3, " ")
+                    temp = f"{int(forecast["main"]["temp"]):+3d}"
                     desc = forecast["weather"][0]["description"]
                     icon = forecast["weather"][0]["icon"][:2]
                     day_content += Code(f"\n{time_str} {temp}°C {weather_map.get(icon, '')} {desc}")

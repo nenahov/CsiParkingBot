@@ -3,7 +3,7 @@ from io import BytesIO
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, FSInputFile, BufferedInputFile
-from aiogram.utils.formatting import Bold, Spoiler, as_key_value
+from aiogram.utils.formatting import Bold, Spoiler, as_key_value, Code, Text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,9 +167,9 @@ async def get_game_message(game_state, session):
     content += as_key_value("Количество участников", count)
     content += '\n'
     if count >= MIN_PLAYERS:
-        content += as_key_value("\nЗа 🥇 место выигрыш", f"{total * PLACE_PERCENT.get(1, 0) // 100} 💟")
-        content += as_key_value("\nЗа 🥈 место выигрыш", f"{total * PLACE_PERCENT.get(2, 0) // 100} 💟")
-        content += as_key_value("\nЗа 🥉 место выигрыш", f"{total * PLACE_PERCENT.get(3, 0) // 100} 💟")
+        content += Text("\nЗа 🥇 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(1, 0) // 100):+3d} 💟")
+        content += Text("\nЗа 🥈 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(2, 0) // 100):+3d} 💟")
+        content += Text("\nЗа 🥉 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(3, 0) // 100):+3d} 💟")
         content += '\n\n'
     players = []
     for idx, player_id in enumerate(game_state):
