@@ -9,7 +9,7 @@ cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 cars_count = 24
 regular_font = ImageFont.truetype("ariali.ttf", 40)
 car_w, car_h = (100, 50)
-
+finish_block_size = 5
 
 def reduce_opacity(image: Image.Image, opacity: float) -> Image.Image:
     """
@@ -115,59 +115,76 @@ def extract_sprite(sprite_sheet, sprite_rect):
     """
     return sprite_sheet.crop(sprite_rect)
 
-
 def draw_race_track(players, lane_height=70, track_length=800,
-                    bg_color=(50, 50, 50), separator_color=(255, 255, 255),
-                    start_color=(0, 200, 0), finish_color=(200, 0, 0),
-                    separator_width=2, boundary_width=5):
+                    bg_color=(50, 50, 50), separator_color=(220, 220, 0),
+                    start_color=(220, 220, 220), separator_width=2, boundary_width=5,
+                    stripe_height=5, stripe_width=20):
     """
-    Рисует прямую гоночную трассу.
-
-    :param players: список участников заезда
-    :param lane_height: высота одной полосы в пикселях
-    :param track_length: длина трассы в пикселях
-    :param bg_color: цвет фона трассы (RGB)
-    :param separator_color: цвет разделительных линий (RGB)
-    :param start_color: цвет линии старта (RGB)
-    :param finish_color: цвет линии финиша (RGB)
-    :param separator_width: ширина разделительных линий
-    :param boundary_width: ширина линий старта/финиша
+    Рисует прямую гоночную трассу с декоративными элементами:
+    - Красно-белые полосы вдоль верхнего и нижнего края
+    - Прерывистые разделительные линии между полосами
+    - Чекер-финиш: две колонки черно-белых квадратов
     """
     img_height = len(players) * lane_height
     img = Image.new('RGB', (track_length, img_height), bg_color)
     draw = ImageDraw.Draw(img)
 
-    # Разметка полос: горизонтальные линии
-    for i in range(1, len(players)):
-        y = i * lane_height
-        draw.line([(0, y), (track_length, y)], fill=separator_color, width=separator_width)
-
-    for idx, player in enumerate(players):
-        draw.text((car_w + 25, idx * 70 + 15), text=player.title, font=regular_font, fill=(200, 200, 200))
-    # for i in range(0, lane_count):
-    #     y = i * lane_height
-    #     car_image = get_car(random.randint(0, cars_count - 1))
-    #     car_image = car_image.rotate(270, expand=True)
-    #     img.paste(car_image, (1, y + 8), mask=car_image)
-
     # Линия старта – слева
     draw.line([(105, 0), (105, img_height)], fill=start_color, width=boundary_width)
-    # Линия финиша – справа
-    draw.line([(track_length - 1, 0), (track_length - 1, img_height)], fill=finish_color, width=boundary_width)
+
+    # Верхние и нижние красно-белые полосы
+    for x in range(0, track_length, stripe_width * 2):
+        # Красный
+        draw.rectangle([x, 0, x + stripe_width, stripe_height], fill=(200, 0, 0))
+        draw.rectangle([x, img_height - stripe_height, x + stripe_width, img_height], fill=(200, 0, 0))
+        # Белый
+        draw.rectangle([x + stripe_width, 0, x + stripe_width * 2, stripe_height], fill=(255, 255, 255))
+        draw.rectangle([x + stripe_width, img_height - stripe_height, x + stripe_width * 2, img_height],
+                       fill=(255, 255, 255))
+
+    # Прерывистые разделительные линии
+    dash_len = 20
+    gap_len = 10
+    for i in range(1, len(players)):
+        y = i * lane_height
+        x = 0
+        # Рисуем штрихи
+        while x < track_length:
+            x_end = min(x + dash_len, track_length)
+            draw.line([(x, y), (x_end, y)], fill=separator_color, width=separator_width)
+            x += dash_len + gap_len
+
+    # Имена участников и машины
+    for idx, player in enumerate(players):
+        y_text = idx * lane_height + (lane_height - 40) // 2
+        draw.text((car_w + 25, y_text), text=player.title, font=regular_font, fill=(200, 200, 200))
+
+    # Чекер-финиш – справа, две колонки квадратов
+    blocks_vertical = (img_height + finish_block_size - 1) // finish_block_size
+    finish_x = track_length - finish_block_size * 2
+    for col in range(2):
+        for row in range(blocks_vertical):
+            x0 = finish_x + col * finish_block_size
+            y0 = row * finish_block_size
+            x1 = x0 + finish_block_size
+            y1 = min(y0 + finish_block_size, img_height)
+            # Чередование цвета
+            if (row + col) % 2 == 0:
+                fill = (0, 0, 0)
+            else:
+                fill = start_color
+            draw.rectangle([x0, y0, x1, y1], fill=fill)
+
     return img
 
-
 def draw_start_race_track(players, lane_height=70, track_length=800,
-                          bg_color=(50, 50, 50), separator_color=(255, 255, 255),
-                          start_color=(0, 200, 0), finish_color=(200, 0, 0),
-                          separator_width=2, boundary_width=5):
+                          bg_color=(50, 50, 50)):
     """
     Рисует прямую гоночную трассу с машинами на старте.
     """
-    img = draw_race_track(players, lane_height=lane_height, track_length=track_length,
-                          bg_color=bg_color,
-                          separator_color=separator_color, start_color=start_color, finish_color=finish_color,
-                          separator_width=separator_width, boundary_width=boundary_width)
+    img = draw_race_track(players, lane_height=lane_height,
+                          track_length=track_length,
+                          bg_color=bg_color)
     for idx, player in enumerate(players):
         y = idx * 70 + (70 - car_h) // 2
         car = get_car(player.attributes.get("car_index", player.id))
@@ -216,7 +233,7 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
             draw_car_with_shadow(car, frame, x, y)
-            if positions[idx] >= max_x:
+            if positions[idx] >= max_x - finish_block_size * 2:
                 draw_car_with_shadow(car, frame, 0, y)
                 if idx not in winners:
                     winners.append(idx)
@@ -257,3 +274,15 @@ def draw_car_with_shadow(car_image, frame, car_x, car_y):
     # Накладываем тень
     frame.paste(shadow, shadow_position, mask=car_image)
     frame.paste(car_image, (car_x, car_y), car_image)
+
+
+if __name__ == "__main__":
+    # Пример: 5 полос
+    class Player:
+        def __init__(self, title): self.title = title
+
+
+    players = [Player("Alice"), Player("Bob"), Player("Charlie")]
+    track = draw_race_track(players)
+    track.save("race_track.png")
+    track.show()
