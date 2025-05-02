@@ -215,7 +215,7 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
 
     max_x = float(track.width - car_w)
     # Различные базовые скорости для разнообразия гонки
-    speed_factors = [1.0 + random.uniform(0.1, 0.4) for _ in range(lane_count)]
+    speed_factors = [1.0 + random.uniform(0.1, 0.3) for _ in range(lane_count)]
     base_speeds = [(max_x + car_w) / frame_count * f for f in speed_factors]
     positions = [0.0] * lane_count
     np_frames = []
@@ -223,6 +223,7 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
     frames = []
     for _ in range(frame_count):
         frame = track.copy()
+        step_winners = []
         for idx in range(0, lane_count):
             car = get_car(players[idx].attributes.get("car_index", players[idx].id))
             car = car.rotate(270, expand=True)
@@ -239,7 +240,8 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
             if positions[idx] >= max_x - finish_block_size * 2:
                 draw_car_with_shadow(car, frame, 0, y)
                 if idx not in winners:
-                    winners.append(idx)
+                    step_winners.append((idx, positions[idx]))
+        [winners.append(t[0]) for t in sorted(step_winners, key=lambda x: x[1], reverse=True)]
         # Для GIF конвертируем в P-палитру
         frames.append(frame.convert('P'))
         np_frames.append(np.asarray(frame))
