@@ -101,7 +101,10 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
                                         photo=await get_media(game_state, players),
                                         reply_markup=builder.as_markup(),
                                         **content.as_kwargs(text_key="caption", entities_key="caption_entities"))
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except:
+        pass
 
 
 @router.callback_query(MyCallback.filter(F.action == "start_race"),
@@ -158,7 +161,7 @@ async def get_media(game_state, players):
 
 
 async def get_game_message(game_state, session):
-    content = Bold(f"Игра «Гонки».\n\n")
+    content = Bold(f"🏁 Игра «Гонки» 🏎️\n\n")
     count = len(game_state)
     total = FEE * count
     content += as_key_value("Количество участников", count)
@@ -181,7 +184,7 @@ async def get_game_message(game_state, session):
 async def get_keyboard_by_game_state(game_state):
     builder = InlineKeyboardBuilder()
     if len(game_state) < MAX_PLAYERS:
-        add_button(f"🏎️ Вступить в гонку (плата 💟 {FEE} кармы)", "join_race", 0, builder)
+        add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder)
     if len(game_state) >= MIN_PLAYERS:
         add_button("🏁 Начать гонку!", "start_race", 0, builder)
     builder.adjust(1)

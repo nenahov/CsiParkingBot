@@ -100,6 +100,7 @@ async def set_avatar(event: CallbackQuery, callback_data: MyCallback, session, d
     driver.attributes["car_index"] = callback_data.spot_id
     await send_alarm(event, "🏎️ Аватар успешно установлен")
     await AuditService(session).log_action(driver.id, UserActionType.CHOOSE_AVATAR, current_day,
+                                           num=callback_data.spot_id,
                                            description=f"{driver.description} выбрал аватар {callback_data.spot_id}")
 
 
