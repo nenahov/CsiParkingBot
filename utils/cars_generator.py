@@ -11,6 +11,7 @@ regular_font = ImageFont.truetype("ariali.ttf", 40)
 car_w, car_h = (100, 50)
 finish_block_size = 5
 
+
 def reduce_opacity(image: Image.Image, opacity: float) -> Image.Image:
     """
     Уменьшает прозрачность изображения, изменяя его альфа-канал.
@@ -115,6 +116,7 @@ def extract_sprite(sprite_sheet, sprite_rect):
     """
     return sprite_sheet.crop(sprite_rect)
 
+
 def draw_race_track(players, lane_height=70, track_length=800,
                     bg_color=(50, 50, 50), separator_color=(220, 220, 0),
                     start_color=(220, 220, 220), separator_width=2, boundary_width=5,
@@ -177,6 +179,7 @@ def draw_race_track(players, lane_height=70, track_length=800,
 
     return img
 
+
 def draw_start_race_track(players, lane_height=70, track_length=800,
                           bg_color=(50, 50, 50)):
     """
@@ -212,8 +215,8 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
 
     max_x = float(track.width - car_w)
     # Различные базовые скорости для разнообразия гонки
-    speed_factors = [1.0 + random.uniform(0, 0.7) for _ in range(lane_count)]
-    base_speeds = [max_x / frame_count * f for f in speed_factors]
+    speed_factors = [1.0 + random.uniform(0.1, 0.4) for _ in range(lane_count)]
+    base_speeds = [(max_x + car_w) / frame_count * f for f in speed_factors]
     positions = [0.0] * lane_count
     np_frames = []
     winners = list()
@@ -228,8 +231,8 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
             x = int(positions[idx])
             part_after = 3 * positions[idx] // max_x
             if part_before != part_after:
-                speed = 1.0 + random.uniform(0, 0.7)
-                base_speeds[idx] = max_x / frame_count * speed
+                speed_factors[idx] += part_after * random.uniform(-0.08, 0.2)
+                base_speeds[idx] = (max_x + car_w) / frame_count * speed_factors[idx]
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
             draw_car_with_shadow(car, frame, x, y)
