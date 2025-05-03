@@ -3,7 +3,7 @@ from io import BytesIO
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, FSInputFile, BufferedInputFile
-from aiogram.utils.formatting import Bold, Spoiler, as_key_value, Code, Text
+from aiogram.utils.formatting import Bold, Spoiler, as_key_value, Code, Text, HashTag
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,7 @@ async def game_race(message: Message, session: AsyncSession, driver: Driver, cur
         await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
                                                f'{driver.title} Начинает игру "Гонки"')
     content, builder, players = await get_game_message(game_state, session)
+    content += HashTag("#гонки")
     await message.answer_photo(show_caption_above_media=False,
                                photo=await get_media(game_state, players),
                                reply_markup=builder.as_markup(),
@@ -97,6 +98,7 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
     await save_state(callback.message.chat.id, game_state, session)
 
     content, builder, players = await get_game_message(game_state, session)
+    content += HashTag("#гонки")
     await callback.message.answer_photo(show_caption_above_media=False,
                                         photo=await get_media(game_state, players),
                                         reply_markup=builder.as_markup(),
@@ -144,7 +146,8 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
                                                    f"{player.title} За {place} место в заезде получил {prize:+d} кармы")
 
         content += '\n'
-
+    content += '\n'
+    content += HashTag("#гонки")
     await callback.message.answer_animation(animation=FSInputFile(f"race_{chat_id}.mp4"), supports_streaming=True)
     await callback.message.answer(**content.as_kwargs())
     await remove_state(chat_id, game_state, session)
