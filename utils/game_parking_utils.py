@@ -4,8 +4,6 @@ from collections import deque
 # Константы символов
 EMPTY = '◻️'
 EMPTY2 = '◽️'
-# WALLS = ['🌲', '🏡', '🏛', '🏗', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏫', '🏬', '🏭', '💒']
-# WALL_WEIGHTS = [0, 80, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 WALLS = ['🌲', '🏡', '🌳', '🌲', '🛸', '🚧', '🏗', '🏛', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏬', '🏭', '💒']
 WALL_WEIGHTS = [0, 800, 50, 50, 1, 20, 20, 10, 10, 10, 10, 10, 10, 10, 10, 20, 10, 10, 10]
 FINISH = '🅿️'
@@ -196,13 +194,9 @@ def is_path_exists(map_matrix):
 
 # Пример использования
 if __name__ == "__main__":
-    n, m = 25, 7
-    game_state = generate_map_with_constraints(n, m)
+    n, m = 20, 30
+    game_state = generate_map_with_constraints(n, m, wall_ratio=0.4)
     print(game_state.get_map())
     print(game_state.x, game_state.y)
     print(game_state.wx, game_state.wy)
-    print(game_state.get_map_section())
-    game_state.move(1, 0)
-    print(game_state.get_map_section())
-    game_state.move(1, 0)
     print(game_state.get_map_section())

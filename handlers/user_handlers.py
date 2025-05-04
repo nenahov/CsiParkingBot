@@ -78,7 +78,6 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
         if in_queue:
             add_button(f"✋ Покинуть очередь{on_ts}", "leave-queue", driver.chat_id, builder)
             keyboard_sizes.append(1)
-            # А встать в очередь можно только через меню, когда хочешь приехать
 
     if is_private:
         add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
@@ -88,7 +87,7 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
                           .lower() in ("yes", "true", "t", "1"))
         if not is_working_day:
             builder.add(
-                InlineKeyboardButton(text="🅿️ Доберись до парковки (Играть за 1 💟)", callback_data=f"game_parking"))
+                InlineKeyboardButton(text="Игра «Доберись до 🅿️» (-1 💟)", callback_data=f"game_parking"))
             keyboard_sizes.append(1)
 
     builder.adjust(*keyboard_sizes)
