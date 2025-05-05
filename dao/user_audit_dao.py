@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
+from typing import Sequence
 
-from sqlalchemy import text
+from sqlalchemy import text, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import constants
@@ -65,11 +66,15 @@ class UserAuditDAO:
     #         ),
     #         UserAudit.num == spot_number
     #     ).group_by(UserAudit.driver_id).all()
-    #
-    # async def get_actions_by_period(self, start_date: datetime, end_date: datetime):
-    #     return self.session.query(UserAudit).filter(
-    #         and_(
-    #             UserAudit.action_time >= start_date,
-    #             UserAudit.action_time <= end_date
-    #         )
-    #     ).all()
+
+    async def get_actions_by_period(self, driver_id: int, period_in_days: int, current_day: date) -> Sequence[
+        UserAudit]:
+        result = await self.session.execute(
+            select(UserAudit)
+            .where(and_(
+                UserAudit.driver_id.is_(driver_id),
+                UserAudit.current_day >= current_day - timedelta(days=period_in_days),
+                UserAudit.current_day < current_day
+            ))
+            .order_by(UserAudit.action_time))
+        return result.scalars().all()

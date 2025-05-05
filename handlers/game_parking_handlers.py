@@ -53,7 +53,7 @@ async def game_parking(callback: CallbackQuery, session: AsyncSession, driver: D
     if game_state is None or game_state.is_end_game():
         game_state = generate_map_with_constraints(17, 13)
         save_state(driver, game_state)
-        driver.attributes["karma"] = max(0, driver.attributes.get("karma", 0) - 1)
+        driver.attributes["karma"] = max(0, driver.get_karma() - 1)
         await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -1,
                                                f"{driver.title} начал игру Доберись до парковки за -1 кармы")
 
@@ -110,7 +110,7 @@ async def move_callback(callback: CallbackQuery, callback_data: MyCallback, sess
     item = game_state.move(callback_data.spot_id, callback_data.day_num)
     save_state(driver, game_state)
     if item is not None and item == TREASURE:
-        driver.attributes["karma"] = driver.attributes.get("karma", 0) + 1
+        driver.attributes["karma"] = driver.get_karma() + 1
         await send_alarm(callback, "🫶 +1 к Вашей карме!")
         await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
                                                f"{driver.title} получил +1 к карме в игре Доберись до парковки")
@@ -137,7 +137,7 @@ async def check_end_game(callback, game_state, driver, session, current_day):
             await send_alarm(callback, "🎉 Поздравляем! Вы победили!")
             await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 1,
                                                    f"{driver.title} доехал до парковки в игре Доберись до парковки")
-            driver.attributes["karma"] = driver.attributes.get("karma", 0) + 1
+            driver.attributes["karma"] = driver.get_karma() + 1
             await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, 1,
                                                    f"{driver.title} успешно закончил игру Доберись до парковки и получил +1 кармы")
 
@@ -153,7 +153,7 @@ async def check_end_game(callback, game_state, driver, session, current_day):
             await send_alarm(callback, "❌ Игра окончена")
             await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, -1,
                                                    f"У {driver.title} закончилось топливо в игре Доберись до парковки")
-            driver.attributes["karma"] = max(0, driver.attributes.get("karma", 0) - 1)
+            driver.attributes["karma"] = max(0, driver.get_karma() - 1)
             await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -1,
                                                    f"{driver.title} проиграл в игре Доберись до парковки и лишился -1 кармы")
 

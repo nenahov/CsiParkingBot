@@ -98,7 +98,7 @@ async def check_auto_karma_for_absent(bot, session, param_service, current_day):
                                                                 ", мы сделаем это за Вас!")
             data = await bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
             driver.attributes["plus"] = -1
-            driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
+            driver.attributes["karma"] = driver.get_karma() + data.dice.value
             await  bot.send_message(chat_id=driver.chat_id,
                                     text=f"💟 Вы получили +{data.dice.value} в карму. /status"
                                          f"\n\nЗавтра будет шанс получить еще.")

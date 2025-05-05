@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile, InputMediaPhoto
-from aiogram.utils.formatting import Text, Bold, as_key_value, as_list
+from aiogram.utils.formatting import Bold, as_key_value, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
@@ -16,7 +16,7 @@ router = Router()
 @router.callback_query(MyCallback.filter(F.action == "settings"),
                        flags={"check_driver": True, "check_callback": True})
 async def show_settings_menu(event, session, driver: Driver):
-    content = Text(Bold("Выберите, что хотите настроить:"))
+    content = Bold("Выберите, что хотите настроить:")
     content += '\n\n'
     content += as_list(as_key_value("📅 Расписание", "Бронирование места по дням недели;"),
                        as_key_value("🛎️ Настройки уведомлений", "Включение/выключение уведомлений;"),
@@ -34,7 +34,7 @@ async def show_settings_menu(event, session, driver: Driver):
 @router.callback_query(MyCallback.filter(F.action == "edit-alarms"),
                        flags={"check_driver": True, "check_callback": True})
 async def edit_alarms(event, driver: Driver):
-    content = Text(Bold("🛎️ Настройки уведомлений:"))
+    content = Bold("🛎️ Настройки уведомлений:")
     # content += '\n\n'
     # content += Bold("✅ - уведомление приходит,\n❌ - уведомление не приходит")
     content += '\n\n'

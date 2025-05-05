@@ -1,9 +1,10 @@
 from datetime import date
+from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dao.user_audit_dao import UserAuditDAO
-from models.user_audit import UserActionType
+from models.user_audit import UserActionType, UserAudit
 
 
 class AuditService:
@@ -16,6 +17,10 @@ class AuditService:
 
     async def get_weekly_karma(self, limit: int):
         return await self.dao.get_weekly_karma(limit)
+
+    async def get_actions_by_period(self, driver_id: int, period_in_days: int, current_day: date) -> Sequence[
+        UserAudit]:
+        return await self.dao.get_actions_by_period(driver_id, period_in_days, current_day)
 
     #
     # async def get_monthly_karma(self, driver_id: int):

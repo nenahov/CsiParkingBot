@@ -31,6 +31,9 @@ class Driver(Base):
     queue = relationship(Queue, back_populates="driver")
     current_spots = relationship(ParkingSpot, back_populates="current_driver")
 
+    def get_karma(self) -> int:
+        return self.attributes.get("karma", 0)
+
     def is_absent(self, day: datetime) -> bool:
         return (self.absent_until is not None) and (self.absent_until > day)
 

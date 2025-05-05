@@ -90,6 +90,8 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
                 InlineKeyboardButton(text="Игра «Доберись до 🅿️» (-1 💟)", callback_data=f"game_parking"))
             keyboard_sizes.append(1)
 
+    add_button(f"🏆 Мои ачивки...", "achievements", driver.chat_id, builder)
+    keyboard_sizes.append(1)
     builder.adjust(*keyboard_sizes)
 
     content = Text('🪪 ', TextLink(driver.title, url=f"tg://user?id={driver.chat_id}"), "\n",
@@ -113,7 +115,7 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
         content += Bold("Нет закрепленных мест")
 
     content += '\n\n'
-    content += as_key_value("Карма", driver.attributes.get("karma", 0))
+    content += as_key_value("Карма", driver.get_karma())
 
     return content, builder
 
@@ -404,7 +406,7 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
         await session.commit()
         await show_status_callback(callback, session, driver, current_day, is_private)
         await asyncio.sleep(5 if is_private else 13)
-        driver.attributes["karma"] = driver.attributes.get("karma", 0) + data.dice.value
+        driver.attributes["karma"] = driver.get_karma() + data.dice.value
         await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
                                                f"Розыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
         await session.commit()
@@ -418,7 +420,7 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
 async def top_karma_week(message: Message, session: AsyncSession, match: re.Match):
     limit = int(match.group(1) if match.group(1) is not None else 10)
     result = await AuditService(session).get_weekly_karma(limit)
-    content = Text(Bold(f"🏆 Топ {len(result)} кармы водителей за неделю:\n"))
+    content = Bold(f"🏆 Топ {len(result)} кармы водителей за неделю:\n")
     for total, description in result:
         content += '\n'
         content += Bold(f"{total}")
@@ -430,10 +432,10 @@ async def top_karma_week(message: Message, session: AsyncSession, match: re.Matc
 async def top_karma(message: Message, session: AsyncSession, match: re.Match):
     limit = int(match.group(1) if match.group(1) is not None else 10)
     drivers = await DriverService(session).get_top_karma_drivers(limit)
-    content = Text(Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n"))
+    content = Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n")
     for driver in drivers:
         content += '\n'
-        content += Bold(f"{driver.attributes.get('karma', 0)}")
+        content += Bold(f"{driver.get_karma()}")
         content += f"\t..\t{driver.title}"
     await message.reply(**content.as_kwargs())
 

@@ -90,7 +90,7 @@ class QueueService:
         while spot in spots and filtered_queue:
             # Выбираем случайного человека из очереди и случайное свободное место
             add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
-            q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.attributes.get("karma", 0))
+            q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.get_karma())
                                                         for q in filtered_queue], k=1)[0]
 
             # Обновляем данные для выбранного элемента очереди:

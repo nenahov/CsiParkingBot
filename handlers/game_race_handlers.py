@@ -85,7 +85,7 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
         await send_alarm(callback, "⚠️ Вы уже участник заезда!")
         return
 
-    karma = driver.attributes.get("karma", 0)
+    karma = driver.get_karma()
     if karma < FEE:
         await send_alarm(callback, "⚠️ Недостаточно кармы!")
         return
@@ -141,7 +141,7 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
         content += Spoiler(f"{player.title:…<20}")
         prize = total * PLACE_PERCENT.get(place, 0) // 100
         if prize != 0:
-            player.attributes["karma"] = player.attributes.get("karma", 0) + prize
+            player.attributes["karma"] = player.get_karma() + prize
             await AuditService(session).log_action(player.id, UserActionType.GAME_KARMA, current_day, prize,
                                                    f"{player.title} За {place} место в заезде получил {prize:+d} кармы")
 

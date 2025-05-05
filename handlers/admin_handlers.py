@@ -58,12 +58,12 @@ async def plus_karma(message: Message, session: AsyncSession, driver: Driver, cu
     replied_user_id = message.reply_to_message.from_user.id
     driver_to = await DriverService(session).get_by_chat_id(replied_user_id)
     if driver_to:
-        driver_to.attributes["karma"] = driver_to.attributes.get("karma", 0) + karma
+        driver_to.attributes["karma"] = driver_to.get_karma() + karma
         await message.answer(
             f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
         await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to,
                                                              add_message=match.group(2), karma_change=karma)
         await AuditService(session).log_action(driver_to.id, UserActionType.GET_ADMIN_KARMA, current_day, karma,
-                                               f"Админ {driver.title} изменил карму {driver_to.title} на {karma} и стало {driver_to.attributes["karma"]}")
+                                               f"Админ {driver.title} изменил карму {driver_to.title} на {karma} и стало {driver_to.get_karma()}")
     else:
         await message.answer("Пользователь не нашелся в базе данных.")
