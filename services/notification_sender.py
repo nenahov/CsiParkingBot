@@ -45,13 +45,14 @@ async def send_alarm(event, text):
     else:
         await event.reply(text)
 
+    logger.info(f"< {text}")
 
 async def send_reply(event, content, builder):
     if isinstance(event, CallbackQuery):
         await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
     else:
         await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
-
+    logger.info(f"< {content.as_markdown()}")
 
 class NotificationSender:
     """
