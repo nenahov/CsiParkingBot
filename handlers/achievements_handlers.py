@@ -157,7 +157,7 @@ async def show_karma_week(event, session, limit, sign, act):
 
 
 def add_karma_button(builder, button_act, button_sign, limit, text, sign, act):
-    if button_act == act and button_sign == sign:
+    if button_sign == sign and (button_act == act or (not button_act and not act)):
         add_button("✔️ " + text, "pass", 0, builder)
     else:
         add_button(text, "karma-week", 0, builder, spot_id=limit, day_num=button_sign, event_type=button_act)
