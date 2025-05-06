@@ -15,8 +15,8 @@ class AuditService:
                          description: str = None):
         return await self.dao.create(driver_id, action, current_day, num, description)
 
-    async def get_weekly_karma(self, limit: int):
-        return await self.dao.get_weekly_karma(limit)
+    async def get_weekly_karma(self, limit: int, sign: int = 0, act: str = ''):
+        return await self.dao.get_weekly_karma(limit, sign, act)
 
     async def get_actions_by_period(self, driver_id: int, period_in_days: int, current_day: date) -> Sequence[
         UserAudit]:

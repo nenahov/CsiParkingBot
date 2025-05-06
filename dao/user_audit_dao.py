@@ -26,17 +26,22 @@ class UserAuditDAO:
         await self.session.commit()
         return audit_record
 
-    async def get_weekly_karma(self, limit: int):
+    async def get_weekly_karma(self, limit: int, sign: int = 0, act: str = ''):
+        if not act:
+            act_str = "'DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA'"
+        else:
+            act_str = "'" + UserActionType[act].name + "'"
         stmt = text(f"""
                 select sum(num) as total, d.description
                 from user_audit ua
                 join drivers d on d.id = ua.driver_id
-                where action in ('DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA')
+                where action in ({act_str})
                   and current_day >= date('now','-7 days')
                   and current_day < date('now','+{constants.new_day_offset} hour')
                   and d.id != :excluded_id
+                  {'' if sign == 0 else (' and num>0 ' if sign > 0 else ' and num<0 ')}
                 group by d.description
-                order by total desc, d.description
+                order by total {'desc' if sign >= 0 else ''}, d.description
                 limit :limit
             """)
         result = await self.session.execute(stmt, {"excluded_id": 1, "limit": limit})

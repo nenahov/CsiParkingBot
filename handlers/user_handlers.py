@@ -416,30 +416,6 @@ async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, dr
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм.* нед").as_("match"), flags={"check_driver": True})
-async def top_karma_week(message: Message, session: AsyncSession, match: re.Match):
-    limit = int(match.group(1) if match.group(1) is not None else 10)
-    result = await AuditService(session).get_weekly_karma(limit)
-    content = Bold(f"🏆 Топ {len(result)} кармы водителей за неделю:\n")
-    for total, description in result:
-        content += '\n'
-        content += Bold(f"{total}")
-        content += f"\t..\t{description}"
-    await message.reply(**content.as_kwargs())
-
-
-@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм").as_("match"), flags={"check_driver": True})
-async def top_karma(message: Message, session: AsyncSession, match: re.Match):
-    limit = int(match.group(1) if match.group(1) is not None else 10)
-    drivers = await DriverService(session).get_top_karma_drivers(limit)
-    content = Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n")
-    for driver in drivers:
-        content += '\n'
-        content += Bold(f"{driver.get_karma()}")
-        content += f"\t..\t{driver.title}"
-    await message.reply(**content.as_kwargs())
-
-
 @router.message(F.text.regexp(r"(?i).*инфо.*мест.* (\d+)").as_("match"), flags={"check_driver": True})
 async def check_spot(message: Message, session: AsyncSession, current_day, match: re.Match):
     spot_id = int(match.group(1))  # Извлекаем номер места

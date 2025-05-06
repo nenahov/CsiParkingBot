@@ -94,8 +94,7 @@ async def add_move_button(game_state, arrow, builder, driver, dx, dy):
         add_button(arrow, "p_move", driver.chat_id, builder, spot_id=dx, day_num=dy)
 
 
-@router.callback_query(MyCallback.filter(F.action == "pass"),
-                       flags={"check_driver": True, "check_callback": True})
+@router.callback_query(MyCallback.filter(F.action == "pass"), flags={"check_driver": True})
 async def pass_callback(callback: CallbackQuery):
     await callback.answer()
 
@@ -169,7 +168,7 @@ async def show_game_map(message: Message, session: AsyncSession, driver: Driver,
     driver_id = int(match.group(1))
     gamer = await DriverService(session).get_by_id(driver_id)
     if gamer is None:
-        await message.answer("🚫 Пользователь не найден")
+        await message.answer("🚫 Пользователь не найден")
         return
     game_state = get_state(gamer)
     if game_state is None:

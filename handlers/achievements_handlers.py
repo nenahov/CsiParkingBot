@@ -1,12 +1,17 @@
+import re
+
 from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
 from aiogram.utils.formatting import Text, Bold, as_key_value, as_list, TextLink, as_marked_section
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import constants
 from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
+from services.driver_service import DriverService
 from services.notification_sender import send_reply
 
 PERIOD_IN_DAYS = 30
@@ -77,8 +82,6 @@ def get_achievement_row(title: str, current_value: int, bronze: int, silver: int
 @router.callback_query(MyCallback.filter(F.action == "achievements-info"),
                        flags={"check_driver": True, "check_callback": True})
 async def show_achievements_info(event, session, driver: Driver):
-    # TODO: add achievements
-
     content = as_list(
         Bold(f"🏆 Описание достижений"),
         as_marked_section(
@@ -107,3 +110,54 @@ async def show_achievements_info(event, session, driver: Driver):
     add_button("⬅️ Назад", "achievements", driver.chat_id, builder)
     builder.adjust(1)
     await send_reply(event, content, builder)
+
+
+@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм.* нед").as_("match"), flags={"check_driver": True})
+async def top_karma_week(message: Message, session: AsyncSession, match: re.Match):
+    limit = int(match.group(1) if match.group(1) is not None else 10)
+    await show_karma_week(message, session, limit, 0, '')
+
+
+@router.callback_query(MyCallback.filter(F.action == "karma-week"), flags={"check_driver": True})
+async def top_karma_week_callback(callback: CallbackQuery, callback_data: MyCallback, session: AsyncSession):
+    limit = callback_data.spot_id
+    act = callback_data.event_type
+    sign = callback_data.day_num
+    await show_karma_week(callback, session, limit, sign, act)
+
+
+@router.message(F.text.regexp(r"(?i).*топ (\d+)?.*карм").as_("match"), flags={"check_driver": True})
+async def top_karma(message: Message, session: AsyncSession, match: re.Match):
+    limit = int(match.group(1) if match.group(1) is not None else 10)
+    drivers = await DriverService(session).get_top_karma_drivers(limit)
+    content = Bold(f"🏆 Топ {len(drivers)} кармы водителей:\n")
+    for driver in drivers:
+        content += '\n'
+        content += Bold(f"{driver.get_karma()}")
+        content += f"\t..\t{driver.title}"
+    await message.reply(**content.as_kwargs())
+
+
+async def show_karma_week(event, session, limit, sign, act):
+    result = await AuditService(session).get_weekly_karma(limit, sign, act)
+    content = Bold(f"🏆 Топ {len(result)} кармы водителей за неделю:\n")
+    for total, description in result:
+        content += '\n'
+        content += Bold(f"{total}")
+        content += f"\t..\t{description}"
+    builder = InlineKeyboardBuilder()
+    add_karma_button(builder, '', 0, limit, "💟", sign, act)
+    add_karma_button(builder, '', 1, limit, "∑+", sign, act)
+    add_karma_button(builder, '', -1, limit, "∑-", sign, act)
+    add_karma_button(builder, UserActionType.DRAW_KARMA.name, 0, limit, "🎲", sign, act)
+    add_karma_button(builder, UserActionType.GAME_KARMA.name, 0, limit, "🕹", sign, act)
+    add_karma_button(builder, UserActionType.GET_ADMIN_KARMA.name, 0, limit, "🫶", sign, act)
+    builder.adjust(1, 2, 3)
+    await send_reply(event, content, builder)
+
+
+def add_karma_button(builder, button_act, button_sign, limit, text, sign, act):
+    if button_act == act and button_sign == sign:
+        add_button("✔️ " + text, "pass", 0, builder)
+    else:
+        add_button(text, "karma-week", 0, builder, spot_id=limit, day_num=button_sign, event_type=button_act)
