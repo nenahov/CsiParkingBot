@@ -16,7 +16,7 @@ from services.notification_sender import send_alarm
 from services.param_service import ParamService
 from utils.cars_generator import draw_start_race_track, create_race_gif
 
-PLACE_PERCENT = {1: 38, 2: 27, 3: 17, 4: 10, 5: 5, 10: 1}
+PLACE_PERCENT = {1: 35, 2: 25, 3: 17, 4: 12, 5: 8}
 
 MIN_PLAYERS = 5
 MAX_PLAYERS = 10
@@ -140,6 +140,8 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
         content += f"{medals.get(place, place)} .. "
         content += Spoiler(f"{player.title:…<20}")
         prize = total * PLACE_PERCENT.get(place, 0) // 100
+        if place == len(winners) and prize < FEE:
+            prize = FEE
         if prize != 0:
             player.attributes["karma"] = player.get_karma() + prize
             await AuditService(session).log_action(player.id, UserActionType.GAME_KARMA, current_day, prize,
@@ -164,7 +166,7 @@ async def get_media(game_state, players):
 
 
 async def get_game_message(game_state, session):
-    content = Bold(f"🏁 Игра «Гонки» 🏎️\n\n")
+    content = Bold(f"🏁 Игра «Гонки» 🏎️🚙🚗🚌🛻🚜\n\n")
     content += "Достаточно нажать 'участвовать в заезде'.\n"
     content += "Гонка проходит автоматически.\n\n"
     count = len(game_state)
@@ -172,11 +174,12 @@ async def get_game_message(game_state, session):
     content += as_key_value("Количество участников", count)
     content += '\n'
     if count >= MIN_PLAYERS:
-        content += Text("\nЗа 🥇 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(1, 0) // 100):+3d} 💟")
-        content += Text("\nЗа 🥈 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(2, 0) // 100):+3d} 💟")
-        content += Text("\nЗа 🥉 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(3, 0) // 100):+3d} 💟")
-        content += Text("\nЗа 4️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(4, 0) // 100):+3d} 💟")
-        content += Text("\nЗа 5️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(5, 0) // 100):+3d} 💟")
+        content += Text("\nЗа 🥇 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(1, 0) // 100):+4d} 💟")
+        content += Text("\nЗа 🥈 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(2, 0) // 100):+4d} 💟")
+        content += Text("\nЗа 🥉 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(3, 0) // 100):+4d} 💟")
+        content += Text("\nЗа 4️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(4, 0) // 100):+4d} 💟")
+        content += Text("\nЗа 5️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(5, 0) // 100):+4d} 💟")
+        content += Text("\nПриз за последнее место:  ") + Code(f"{FEE} 💟")
         content += '\n\n'
     players = []
     for idx, player_id in enumerate(game_state):
@@ -184,6 +187,8 @@ async def get_game_message(game_state, session):
         players.append(player)
         if count < MIN_PLAYERS:
             content += f"{idx + 1}. {player.title}\n"
+    if count < MIN_PLAYERS:
+        content += '\n'
     builder = await get_keyboard_by_game_state(game_state)
     return content, builder, players
 
