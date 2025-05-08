@@ -51,8 +51,8 @@ async def show_achievements(event, session, driver: Driver, current_day):
     racer = sum(1 for a in actions if a.action == UserActionType.GAME_KARMA and a.num == -5)
     content += get_achievement_row("Гонщик 🏎️", racer, 3, 7, 15)
 
-    omnivorous = len(set(a.num for a in actions if a.action == UserActionType.TAKE_SPOT))
-    content += get_achievement_row("Всеядный 🍽️", omnivorous, 2, 3, 5, 2)
+    traveler = len(set(a.num for a in actions if a.action == UserActionType.TAKE_SPOT))
+    content += get_achievement_row("Путешественник 🌏", traveler, 2, 3, 5, 2)
 
     rainbow_fortune = max_unique_length([a.num for a in actions if a.action == UserActionType.DRAW_KARMA])
     content += get_achievement_row("Радуга фортуны 🌈", rainbow_fortune, 4, 5, 6, 3)
@@ -108,7 +108,7 @@ async def show_achievements_info(event, session, driver: Driver):
         as_marked_section(
             Bold("Редкие ачивки:"),
             Bold("🪨 Стоик"),  # Вышел из очереди в течение рабочего дня и не приехал на парковку
-            Bold("🍽️ Всеядный"),  # Занимаете разные парковочные места
+            Bold("🌏 Путешественник"),  # Занимаете разные парковочные места
             Bold("🏃 Очередной эксперт"),  # Вышел из очереди в течение рабочего дня
             marker="    ",
         ),
