@@ -57,6 +57,9 @@ async def show_achievements(event, session, driver: Driver, current_day):
     rainbow_fortune = max_unique_length([a.num for a in actions if a.action == UserActionType.DRAW_KARMA])
     content += get_achievement_row("Радуга фортуны 🌈", rainbow_fortune, 4, 5, 6, 3)
 
+    repeat_karma = max_consecutive_length([a.num for a in actions if a.action == UserActionType.DRAW_KARMA])
+    content += get_achievement_row("По колее 🚗", repeat_karma, 3, 4, 5, 2)
+
     queue_expert = len(set(a.current_day for a in actions if a.action == UserActionType.LEAVE_QUEUE))
     content += get_achievement_row("Очередной эксперт 🏃", queue_expert, 2, 5, 10)
 
@@ -98,6 +101,7 @@ async def show_achievements_info(event, session, driver: Driver):
             as_key_value("💛 Щедрая душа", f"Освободил парковку после {constants.new_day_begin_hour}:00, но до 10:00"),
             # и не занял после
             as_key_value("🌈 Радуга фортуны", "Разное количество кармы несколько дней подряд"),
+            as_key_value("🚗 По колее", "Одно и то же количество кармы несколько дней подряд"),
             as_key_value("🏎️ Гонщик", "Участие в игре «Гонки»"),
             marker="    ",
         ),
