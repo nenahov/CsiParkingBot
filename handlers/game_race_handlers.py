@@ -16,7 +16,7 @@ from services.notification_sender import send_alarm
 from services.param_service import ParamService
 from utils.cars_generator import draw_start_race_track, create_race_gif
 
-PLACE_PERCENT = {1: 40, 2: 30, 3: 20}
+PLACE_PERCENT = {1: 38, 2: 27, 3: 17, 4: 10, 5: 5, 10: 1}
 
 MIN_PLAYERS = 5
 MAX_PLAYERS = 10
@@ -165,6 +165,8 @@ async def get_media(game_state, players):
 
 async def get_game_message(game_state, session):
     content = Bold(f"🏁 Игра «Гонки» 🏎️\n\n")
+    content += "Достаточно нажать 'участвовать в заезде'.\n"
+    content += "Гонка проходит автоматически.\n\n"
     count = len(game_state)
     total = FEE * count
     content += as_key_value("Количество участников", count)
@@ -173,6 +175,8 @@ async def get_game_message(game_state, session):
         content += Text("\nЗа 🥇 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(1, 0) // 100):+3d} 💟")
         content += Text("\nЗа 🥈 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(2, 0) // 100):+3d} 💟")
         content += Text("\nЗа 🥉 место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(3, 0) // 100):+3d} 💟")
+        content += Text("\nЗа 4️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(4, 0) // 100):+3d} 💟")
+        content += Text("\nЗа 5️⃣ место выигрыш: ") + Code(f"{(total * PLACE_PERCENT.get(5, 0) // 100):+3d} 💟")
         content += '\n\n'
     players = []
     for idx, player_id in enumerate(game_state):
