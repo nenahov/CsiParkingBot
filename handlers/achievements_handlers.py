@@ -54,6 +54,9 @@ async def show_achievements(event, session, driver: Driver, current_day):
     omnivorous = len(set(a.num for a in actions if a.action == UserActionType.TAKE_SPOT))
     content += get_achievement_row("Всеядный 🍽️", omnivorous, 2, 3, 5, 2)
 
+    rainbow_fortune = max_unique_length([a.num for a in actions if a.action == UserActionType.DRAW_KARMA])
+    content += get_achievement_row("Радуга фортуны 🌈", rainbow_fortune, 4, 5, 6, 3)
+
     queue_expert = len(set(a.current_day for a in actions if a.action == UserActionType.LEAVE_QUEUE))
     content += get_achievement_row("Очередной эксперт 🏃", queue_expert, 2, 5, 10)
 
@@ -94,14 +97,15 @@ async def show_achievements_info(event, session, driver: Driver):
             as_key_value("🍸 Завсегдатай", "Насколько часто занимаете парковку"),
             as_key_value("💛 Щедрая душа", f"Освободил парковку после {constants.new_day_begin_hour}:00, но до 10:00"),
             # и не занял после
+            as_key_value("🌈 Радуга фортуны", "Разное количество кармы несколько дней подряд"),
             as_key_value("🏎️ Гонщик", "Участие в игре «Гонки»"),
             marker="    ",
         ),
         as_marked_section(
             Bold("Редкие ачивки:"),
+            Bold("🪨 Стоик"),  # Вышел из очереди в течение рабочего дня и не приехал на парковку
             Bold("🍽️ Всеядный"),  # Занимаете разные парковочные места
             Bold("🏃 Очередной эксперт"),  # Вышел из очереди в течение рабочего дня
-            Bold("🪨 Стоик"),  # Вышел из очереди в течение рабочего дня и не приехал на парковку
             marker="    ",
         ),
         sep="\n\n",
@@ -161,3 +165,38 @@ def add_karma_button(builder, button_act, button_sign, limit, text, sign, act):
         add_button("✔️ " + text, "pass", 0, builder)
     else:
         add_button(text, "karma-week", 0, builder, spot_id=limit, day_num=button_sign, event_type=button_act)
+
+
+def max_unique_length(nums):
+    max_len = 0
+    current_set = set()
+    left = 0
+    right = 0
+    n = len(nums)
+    while right < n:
+        if nums[right] not in current_set:
+            current_set.add(nums[right])
+            right += 1
+            max_len = max(max_len, right - left)
+        else:
+            current_set.remove(nums[left])
+            left += 1
+    return max_len
+
+
+def max_consecutive_length(nums):
+    if not nums:
+        return 0
+
+    max_length = 1
+    current_length = 1
+
+    for i in range(1, len(nums)):
+        if nums[i] == nums[i - 1]:
+            current_length += 1
+            if current_length > max_length:
+                max_length = current_length
+        else:
+            current_length = 1
+
+    return max_length
