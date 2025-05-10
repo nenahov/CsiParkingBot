@@ -168,8 +168,10 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
 @router.callback_query(MyCallback.filter(F.action == "set_wheels"),
                        flags={"check_driver": True})
 async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    driver.attributes["wheels"] = callback_data.spot_id
-    await send_alarm(callback, "🛞 Шины успешно установлены")
+    wheels = callback_data.spot_id
+    driver.attributes["wheels"] = wheels
+    text = "Дождевые шины (дают + к скорости во время дождя)" if wheels == 1 else "Слики (лучшие на сухой трассе)" if wheels == 2 else "Универсальные шины"
+    await send_alarm(callback, f"🛞 {text} успешно установлены")
 
 async def get_media(game_state, players):
     if len(game_state) < MIN_PLAYERS:
