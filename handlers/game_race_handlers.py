@@ -155,6 +155,20 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
     await remove_state(chat_id, game_state, session)
 
 
+@router.callback_query(MyCallback.filter(F.action == "check_wheels"),
+                       flags={"check_driver": True})
+async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    wheels = driver.attributes.get("wheels", 0)
+    text = "дождевые шины (дают + к скорости во время дождя)" if wheels == 1 else "слики (лучшие на сухой трассе)" if wheels == 2 else "универсальные шины"
+    await send_alarm(callback, f"🛞 Сейчас на машине установлены {text}")
+
+
+@router.callback_query(MyCallback.filter(F.action == "set_wheels"),
+                       flags={"check_driver": True})
+async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    driver.attributes["wheels"] = callback_data.spot_id
+    await send_alarm(callback, "🛞 Шины успешно установлены")
+
 async def get_media(game_state, players):
     if len(game_state) < MIN_PLAYERS:
         return FSInputFile("./pics/racing.jpg")
@@ -197,6 +211,11 @@ async def get_keyboard_by_game_state(game_state):
     builder = InlineKeyboardBuilder()
     if len(game_state) < MAX_PLAYERS:
         add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder)
+
+    add_button(f"ℹ️ Проверить колеса 🛞🛞🛞🛞", "check_wheels", 0, builder)
+    add_button(f"🛞 Поставить универсальные шины 🛞", "set_wheels", 0, builder, spot_id=0)
+    add_button(f"🛞 Поставить дождевые шины 🌦️", "set_wheels", 0, builder, spot_id=1)
+    add_button(f"🛞 Поставить слики ☀️", "set_wheels", 0, builder, spot_id=2)
     if len(game_state) >= MIN_PLAYERS:
         add_button("🏁 Начать гонку!", "start_race", 0, builder)
     builder.adjust(1)

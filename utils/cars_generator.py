@@ -2,7 +2,7 @@ import io
 import random
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont, ImageChops
 from moviepy import ImageSequenceClip
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
@@ -128,7 +128,7 @@ def draw_race_track(players, lane_height=70, track_length=800,
     - Чекер-финиш: две колонки черно-белых квадратов
     """
     img_height = len(players) * lane_height
-    img = Image.new('RGB', (track_length, img_height), bg_color)
+    img = Image.new('RGBA', (track_length, img_height), bg_color)
     draw = ImageDraw.Draw(img)
 
     # Линия старта – слева
@@ -212,28 +212,50 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
                             lane_height=70,
                             bg_color=(120, 120, 120),
                             track_length=1800).convert('RGBA')
-
     max_x = float(track.width - car_w)
     # Различные базовые скорости для разнообразия гонки
-    speed_factors = [1.0 + random.uniform(0.1, 0.3) for _ in range(lane_count)]
+    speed_factors = [1.0 for _ in range(lane_count)]
     base_speeds = [(max_x + car_w) / frame_count * f for f in speed_factors]
+    # погодный фактор скорости
+    weather_factor = [-1001.0 for _ in range(lane_count)]
     positions = [0.0] * lane_count
     np_frames = []
     winners = list()
     frames = []
+    seg_count = 3
+    type_segs = random.choices(population=range(3), k=seg_count)
+    print(type_segs)
+    sunny_segs = [idx for idx, t in enumerate(type_segs) if t == 2]
+    sun_layer = make_sun_glare_layer((track.width, track.height), max_alpha=100)
+    sun_layer = add_edge_fade_mask(sun_layer, sunny_segs, seg_count=seg_count)
+    track = Image.alpha_composite(track, sun_layer)
+    cloud_layer = get_clouds_layer(track)
+    cloudy_segs = [idx for idx, t in enumerate(type_segs) if t != 2]
+    cloud_layer = add_edge_fade_mask(cloud_layer, cloudy_segs, seg_count=seg_count)
     for _ in range(frame_count):
         frame = track.copy()
         step_winners = []
         for idx in range(0, lane_count):
             car = get_car(players[idx].attributes.get("car_index", players[idx].id))
             car = car.rotate(270, expand=True)
-            part_before = 3 * positions[idx] // max_x
+            part_before = int(seg_count * positions[idx] // max_x)
             positions[idx] = positions[idx] + base_speeds[idx]
             x = int(positions[idx])
-            part_after = 3 * positions[idx] // max_x
-            if part_before != part_after:
-                speed_factors[idx] += part_after * random.uniform(-0.08, 0.2)
-                base_speeds[idx] = (max_x + car_w) / frame_count * speed_factors[idx]
+            part_after = int(seg_count * positions[idx] // max_x)
+            if part_before != part_after or weather_factor[idx] < -1000.0:
+                wheels = players[idx].attributes.get("wheels", 0)
+                seg = -1 if part_after >= len(type_segs) else type_segs[part_after]
+                min_w = 0
+                max_w = 0
+                if seg == 0:
+                    min_w, max_w = (0.15, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.05, 0.2)
+                elif seg == 1:
+                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.2, 0.8) if wheels == 1 else (0.0, 0.05)
+                elif seg == 2:
+                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.3, 0.6)
+                weather_factor[idx] = random.uniform(min_w, max_w)
+                speed_factors[idx] += part_after * random.uniform(0.0, 0.02)
+                base_speeds[idx] = (max_x + car_w) * (speed_factors[idx] + weather_factor[idx]) / frame_count
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
             draw_car_with_shadow(car, frame, x, y)
@@ -241,6 +263,15 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
                 draw_car_with_shadow(car, frame, 0, y)
                 if idx not in winners:
                     step_winners.append((idx, positions[idx]))
+
+        # Накладываем слои
+        for rainy_seg in [idx for idx, t in enumerate(type_segs) if t == 1]:
+            seg, seg_x = get_frame_segment(frame, rainy_seg, seg_count)
+            seg = make_rain_layer(seg)
+            frame.paste(seg, (seg_x, 0))
+
+        frame = Image.alpha_composite(frame, cloud_layer)
+
         [winners.append(t[0]) for t in sorted(step_winners, key=lambda x: x[1], reverse=True)]
         # Для GIF конвертируем в P-палитру
         frames.append(frame.convert('P'))
@@ -281,13 +312,182 @@ def draw_car_with_shadow(car_image, frame, car_x, car_y):
     frame.paste(car_image, (car_x, car_y), car_image)
 
 
+def make_sun_glare_layer(size, center=None, max_alpha=120, radius=None):
+    """
+    Создаёт слой «солнечного» градиента на весь кадр.
+    """
+    w, h = size
+    if center is None:
+        center = (w * 0.3, h * 0.2)  # сверху слева
+    if radius is None:
+        radius = int(max(w, h) * 1.05)
+    layer = Image.new('RGBA', size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    # концентрические круги
+    for r in range(radius, 0, -1):
+        alpha = int(max_alpha * (1 - r / radius))
+        color = (255, 255, 200, alpha)
+        bbox = [
+            (center[0] - r, center[1] - r),
+            (center[0] + r, center[1] + r),
+        ]
+        draw.ellipse(bbox, fill=color)
+    return layer.filter(ImageFilter.GaussianBlur(radius * 0.02))
+
+
+def add_edge_fade_mask(layer, sunny_segs, seg_count=3):
+    """
+    Возвращает маску освещённости:
+    - Солнечные сегменты: полностью α=255.
+    - Несолнечные: затухание с той стороны, где есть соседний солнечный сегмент.
+    """
+    w, h = (layer.width, layer.height)
+    seg_w = w // seg_count
+    mask = Image.new('L', (w, h), 0)
+    pixels = mask.load()
+
+    for seg in range(seg_count):
+        x_start = seg * seg_w
+        x_end = x_start + seg_w
+
+        if seg in sunny_segs:
+            # Солнечный сегмент — полностью залить
+            for x in range(x_start, x_end):
+                for y in range(h):
+                    pixels[x, y] = 255
+        else:
+            # Не солнечный — определяем соседей
+            left_sunny = (seg - 1) in sunny_segs
+            right_sunny = (seg + 1) in sunny_segs
+            for x in range(x_start, x_end):
+                rel_x = x - x_start
+                alpha = 0
+
+                if left_sunny and rel_x < seg_w // 2:
+                    # Затухание от левого солнечного сегмента
+                    alpha = int(255 * (1 - rel_x / (seg_w / 2)))
+
+                elif right_sunny and rel_x >= seg_w // 2:
+                    # Затухание от правого солнечного сегмента
+                    dx = seg_w - rel_x
+                    alpha = int(255 * (1 - dx / (seg_w / 2)))
+
+                for y in range(h):
+                    pixels[x, y] = max(pixels[x, y], alpha)
+
+    orig_alpha = layer.getchannel('A')
+    combined_alpha = ImageChops.multiply(orig_alpha, mask)
+    layer.putalpha(combined_alpha)
+    return layer
+
+
+def get_frame_segment(frame, segment_index, seg_count):
+    w, h = frame.size
+    seg_w = w // seg_count
+    seg_x = seg_w * segment_index
+    return frame.crop((seg_x, 0, seg_x + seg_w, h)), seg_x
+
+
+def make_rain_layer(seg, drop_count=400):
+    layer = Image.new('RGBA', seg.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    w, h = seg.size
+    for _ in range(drop_count):
+        x = random.randint(0, w)
+        y = random.randint(0, h)
+        length = random.randint(10, 20)
+        # угол падения ~70° (около 1.2 радиан)
+        dx = int(length * 0.34)
+        dy = int(length * 0.94)
+        draw.line((x, y, x + dx, y + dy), fill=(66, 170, 255, random.randint(200, 255)), width=2)
+    rain = layer.filter(ImageFilter.GaussianBlur(1))
+    return Image.alpha_composite(seg, rain)
+
+
+def get_clouds_layer(
+        base,
+        num_clouds: int = 15,
+        cloud_size_range: tuple = (100, 200),
+        opacity: int = 100,
+        blur_radius: int = 15
+):
+    """
+    Draw random cloud shapes on an image using Pillow.
+
+    :param input_path: Path to the input image file
+    :param output_path: Path where the result will be saved
+    :param num_clouds: Number of clouds to draw
+    :param cloud_size_range: Tuple (min_size, max_size) for cloud diameter
+    :param opacity: Opacity of cloud fill (0-255)
+    :param blur_radius: Gaussian blur radius to soften clouds
+    """
+    width, height = base.size
+
+    # Create an RGBA layer for drawing clouds
+    cloud_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(cloud_layer)
+
+    for _ in range(num_clouds):
+        # Random center position for the cloud (y limited to sky region)
+        cx = random.randint(0, width)
+        cy = random.randint(0, height)
+
+        # Random overall size of the cloud
+        w = random.randint(*cloud_size_range)
+        h = w // 2
+
+        # Draw overlapping ellipses to form a cloud
+        for _ in range(random.randint(3, 6)):
+            ex = cx + random.randint(-w // 2, w // 2)
+            ey = cy + random.randint(-h // 2, h // 2)
+            ew = random.randint(w // 2, w)
+            eh = random.randint(h // 2, h)
+            draw.ellipse([ex, ey, ex + ew, ey + eh], fill=(255, 255, 255, opacity))
+
+    # Apply a Gaussian blur to soften the cloud edges
+    cloud_layer = cloud_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+
+    # Save the resulting image
+    return cloud_layer
+
+
+def make_sun_glare(seg, center=None, max_alpha=120, radius=None):
+    w, h = seg.size
+    if center is None: center = (w * 0.5, h * 0.2)  # в центре вверху
+    if radius is None: radius = max(w, h) * 0.5
+    layer = Image.new('RGBA', seg.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for r in range(int(radius), 0, -1):
+        alpha = int(max_alpha * (1 - r / radius))
+        color = (255, 255, 200, alpha)
+        draw.ellipse([
+            (center[0] - r, center[1] - r),
+            (center[0] + r, center[1] + r),
+        ], fill=color)
+    sun = layer.filter(ImageFilter.GaussianBlur(radius * 0.02))
+    # сделать ярче и контраста чуть выше
+    # seg = ImageEnhance.Brightness(seg).enhance(1.1)
+    # seg = ImageEnhance.Contrast(seg).enhance(1.1)
+    return Image.alpha_composite(seg, sun)
+
+
 if __name__ == "__main__":
     # Пример: 5 полос
     class Player:
-        def __init__(self, title): self.title = title
+        def __init__(self, title, wheels: int):
+            self.title = title
+            self.id = random.randint(1, 24)
+            self.attributes = dict()
+            self.attributes["wheels"] = wheels
 
 
-    players = [Player("Alice"), Player("Bob"), Player("Charlie")]
-    track = draw_race_track(players)
-    track.save("race_track.png")
-    track.show()
+    players = [Player("Alice", 0), Player("Bob", 0), Player("Charlie", 0),
+               Player("Dave", 1), Player("Eve", 1), Player("Frank", 1),
+               Player("Grace", 2), Player("Helen", 2), Player("Ivan", 2)]
+    winners = create_race_gif(players, 2)
+    print(winners)
+    # track = draw_race_track(players)
+    # rain = make_rain_layer(track)
+    # track = Image.alpha_composite(track, rain)
+    # track.save("race_track2.png")
+    # track.show()
