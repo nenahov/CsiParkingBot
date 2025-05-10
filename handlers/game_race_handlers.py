@@ -1,4 +1,6 @@
 import json
+import os
+import random
 from io import BytesIO
 
 from aiogram import Router, F
@@ -18,7 +20,7 @@ from utils.cars_generator import draw_start_race_track, create_race_gif
 
 PLACE_PERCENT = {1: 35, 2: 25, 3: 17, 4: 12, 5: 8}
 
-MIN_PLAYERS = 5
+MIN_PLAYERS = 6
 MAX_PLAYERS = 10
 FEE = 5
 
@@ -171,12 +173,44 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
 
 async def get_media(game_state, players):
     if len(game_state) < MIN_PLAYERS:
+        file = get_random_filename("./pics/racing")
+        if file:
+            return FSInputFile(os.path.join("./pics/racing", file))
         return FSInputFile("./pics/racing.jpg")
     track = draw_start_race_track(players, bg_color=(120, 120, 120), track_length=len(game_state) * 120)
     img_buffer = BytesIO()
     track.save(img_buffer, format="PNG")
     img_buffer.seek(0)
     return BufferedInputFile(img_buffer.getvalue(), filename="race.png")
+
+
+def get_random_filename(directory_path):
+    """
+    Возвращает случайное имя файла из директории directory_path.
+    Если директория пуста или не существует – возвращает None.
+    """
+    try:
+        # Получаем список всех файлов и папок в директории
+        entries = os.listdir(directory_path)
+    except FileNotFoundError:
+        # Директория не найдена
+        print(f"Директория '{directory_path}' не существует.")
+        return None
+    except PermissionError:
+        # Недостаточно прав для чтения директории
+        print(f"Нет прав на чтение директории '{directory_path}'.")
+        return None
+
+    # Фильтруем только файлы (если нужны только файлы, а не подпапки)
+    files = [f for f in entries if os.path.isfile(os.path.join(directory_path, f))]
+
+    if not files:
+        print("Директория пуста или в ней нет файлов.")
+        return None
+
+    # Выбираем случайный файл
+    random_file = random.choice(files)
+    return random_file
 
 
 async def get_game_message(game_state, session):
