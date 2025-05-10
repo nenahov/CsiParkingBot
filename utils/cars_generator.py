@@ -397,7 +397,7 @@ def make_rain_layer(seg, drop_count=400):
         y = random.randint(0, h)
         length = random.randint(10, 20)
         # угол падения ~70° (около 1.2 радиан)
-        dx = int(length * 0.34)
+        dx = -int(length * 0.34)
         dy = int(length * 0.94)
         draw.line((x, y, x + dx, y + dy), fill=(66, 170, 255, random.randint(200, 255)), width=2)
     rain = layer.filter(ImageFilter.GaussianBlur(1))
@@ -414,8 +414,7 @@ def get_clouds_layer(
     """
     Draw random cloud shapes on an image using Pillow.
 
-    :param input_path: Path to the input image file
-    :param output_path: Path where the result will be saved
+    :param base: input image
     :param num_clouds: Number of clouds to draw
     :param cloud_size_range: Tuple (min_size, max_size) for cloud diameter
     :param opacity: Opacity of cloud fill (0-255)

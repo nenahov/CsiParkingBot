@@ -17,15 +17,15 @@ params = {
     "lang": "ru"
 }
 weather_map = {
-    "01": "☀",
-    "02": "⛅️",
-    "03": "⛅️",
-    "04": "🌥️",
-    "09": "🌦️",
-    "10": "🌧️",
-    "11": "⛈️",
-    "13": "🌨️",
-    "50": "🌫️"
+    "01": {"icon": "☀", "sun_alpha": 120},
+    "02": {"icon": "⛅️", "sun_alpha": 100, "num_clouds": 5},
+    "03": {"icon": "⛅️", "sun_alpha": 80, "num_clouds": 15},
+    "04": {"icon": "🌥️", "sun_alpha": 30, "num_clouds": 20},
+    "09": {"icon": "🌦️", "sun_alpha": 10, "rain_drop_count": 400, "num_clouds": 20},
+    "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 30},
+    "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 40},
+    "13": {"icon": "🌨️", "num_clouds": 30},
+    "50": {"icon": "🌫️", "num_clouds": 50}
 }
 
 
@@ -33,14 +33,17 @@ class WeatherService:
     def __init__(self):
         pass
 
-    async def get_weather_string(self, day: date) -> (str, str):
+    async def get_weather_test(self, day: date) -> (str, dict, str):
+        return "+25°", {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 40}, "тест"
+
+    async def get_weather_string(self, day: date) -> (str, dict, str):
         try:
             response = requests.get(BASE_URL, params=params)
             data = response.json()
             logger.debug(f"{data}")
             day_request = day.strftime("%Y-%m-%d")
             temp = ""
-            icon = ""
+            weather = dict()
             desc = ""
             for forecast in data["list"]:
                 date = forecast["dt_txt"].split()[0]
@@ -49,13 +52,13 @@ class WeatherService:
                     if temp == "" or time == "12:00":
                         temp = f"{int(forecast["main"]["temp"]):+3d}°"
                         icon = forecast["weather"][0]["icon"][:2]
-                        icon = f"{weather_map.get(icon, '')}"
+                        weather = weather_map.get(icon, dict())
                         desc = forecast["weather"][0]["description"]
                     if time == "12:00":
-                        return temp, icon, desc
-            return temp, icon, desc
+                        return temp, weather, desc
+            return temp, weather, desc
         except:
-            return "", "", ""
+            return "", dict(), ""
 
     async def get_weather_content(self, day: date):
         is_ok = False
@@ -74,7 +77,7 @@ class WeatherService:
                     temp = f"{int(forecast["main"]["temp"]):+3d}"
                     desc = forecast["weather"][0]["description"]
                     icon = forecast["weather"][0]["icon"][:2]
-                    content += Code(f"\n{time} {temp}°C {weather_map.get(icon, "")} {desc}")
+                    content += Code(f"\n{time} {temp}°C {weather_map.get(icon, dict()).get("icon", '')} {desc}")
         except:
             pass
         if not is_ok:
@@ -109,7 +112,7 @@ class WeatherService:
                     temp = f"{int(forecast["main"]["temp"]):+3d}"
                     desc = forecast["weather"][0]["description"]
                     icon = forecast["weather"][0]["icon"][:2]
-                    day_content += Code(f"\n{time_str} {temp}°C {weather_map.get(icon, '')} {desc}")
+                    day_content += Code(f"\n{time_str} {temp}°C {weather_map.get(icon, dict()).get("icon", '')} {desc}")
                     is_ok = True
 
                 content += day_content + "\n\n"

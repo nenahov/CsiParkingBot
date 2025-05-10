@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
-from utils.cars_generator import get_car, draw_car_with_shadow
+from utils.cars_generator import get_car, draw_car_with_shadow, make_sun_glare_layer, make_rain_layer, get_clouds_layer
 
 # Цвета для разных статусов
 COLORS = {
@@ -61,6 +61,12 @@ async def generate_parking_map(parking_spots,
                                frame_index: int = None,
                                day: date = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
+    temp, weather, desc = await WeatherService().get_weather_string(day)
+    # temp, weather, desc = await WeatherService().get_weather_test(day)
+    # солнце рисуем вначале, дождь и облака в конце
+    if weather.get("sun_alpha", 0) > 0:
+        sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
+        overlay = Image.alpha_composite(overlay, sun_layer)
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
@@ -147,16 +153,24 @@ async def generate_parking_map(parking_spots,
         overlay.paste(shadow, shadow_position, mask=garbage_truck)
         overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
+    # Рисуем дождь и облака
+    if weather.get("rain_drop_count", 0) > 0:
+        overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
+
+    if weather.get("num_clouds", 0) > 0:
+        cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
+        overlay = Image.alpha_composite(overlay, cloud_layer)
+
     # Добавляем текст
-    temp, weather, desc = await WeatherService().get_weather_string(day)
     draw = ImageDraw.Draw(overlay)
     draw.text((17, 80), text=temp, font=regular_font, fill=COLORS['text'])
-    draw.text((140, 57), text=weather, font=emoji_font, embedded_color=True)
+    draw.text((140, 57), text=weather.get("icon", ''), font=emoji_font, embedded_color=True)
 
-    if "дожд" in desc:
-        result = Image.alpha_composite(parking_r_img, overlay)
-    else:
-        result = Image.alpha_composite(parking_img, overlay)
+    result = Image.alpha_composite(parking_r_img, overlay)
+    # if "дожд" in desc:
+    #     result = Image.alpha_composite(parking_r_img, overlay)
+    # else:
+    #     result = Image.alpha_composite(parking_img, overlay)
 
     return result
 

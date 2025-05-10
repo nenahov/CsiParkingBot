@@ -213,8 +213,8 @@ async def get_keyboard_by_game_state(game_state):
         add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder)
 
     add_button(f"ℹ️ Проверить колеса 🛞🛞🛞🛞", "check_wheels", 0, builder)
-    add_button(f"🛞 Поставить универсальные шины 🛞", "set_wheels", 0, builder, spot_id=0)
-    add_button(f"🛞 Поставить дождевые шины 🌦️", "set_wheels", 0, builder, spot_id=1)
+    add_button(f"🛞 Поставить универсальные шины ☀️☁️🌧️", "set_wheels", 0, builder, spot_id=0)
+    add_button(f"🛞 Поставить дождевые шины 🌧️", "set_wheels", 0, builder, spot_id=1)
     add_button(f"🛞 Поставить слики ☀️", "set_wheels", 0, builder, spot_id=2)
     if len(game_state) >= MIN_PLAYERS:
         add_button("🏁 Начать гонку!", "start_race", 0, builder)
