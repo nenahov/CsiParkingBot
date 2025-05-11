@@ -40,11 +40,7 @@ dy = 0
 d_width = -1
 
 cars = Image.open("./pics/cars.png").convert("RGBA")
-# cars2 = Image.open("./pics/cars2.png").convert("RGBA")
-# cars3 = Image.open("./pics/cars3.png").convert("RGBA")
-# img = Image.new('RGB', (800, 600), (255, 255, 255))
-parking_img = Image.open("./pics/parking.png")
-parking_r_img = Image.open("./pics/parking_r.png")
+parking_img = Image.open("./pics/parking_r.png")
 
 regular_font = ImageFont.load_default(60)
 try:
@@ -166,11 +162,7 @@ async def generate_parking_map(parking_spots,
     draw.text((17, 80), text=temp, font=regular_font, fill=COLORS['text'])
     draw.text((140, 57), text=weather.get("icon", ''), font=emoji_font, embedded_color=True)
 
-    result = Image.alpha_composite(parking_r_img, overlay)
-    # if "дожд" in desc:
-    #     result = Image.alpha_composite(parking_r_img, overlay)
-    # else:
-    #     result = Image.alpha_composite(parking_img, overlay)
+    result = Image.alpha_composite(parking_img, overlay)
 
     return result
 
