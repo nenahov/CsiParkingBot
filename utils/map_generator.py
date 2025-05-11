@@ -72,13 +72,6 @@ async def generate_parking_map(parking_spots,
     for spot in parking_spots:
         status = get_status(driver, reservations_data, spot, use_spot_status)
 
-        # Создаем паттерн с диагональными полосами
-        pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
-                                          stripe_width=4,
-                                          color2=COLORS[status],
-                                          color1=(255, 255, 255, 0))
-
-        # Вставляем паттерн в прямоугольник
         x = spot.x
         y = spot.y
         car_x = -1000
@@ -108,7 +101,6 @@ async def generate_parking_map(parking_spots,
             car_x = x + 2
             car_y = y + 2
             car_rotate = -90
-        overlay.paste(pattern, (dx + x, dy + y))
 
         if (use_spot_status
                 and spot.current_driver_id is not None
@@ -127,6 +119,14 @@ async def generate_parking_map(parking_spots,
                 car_image = car_image.resize(new_size)
             car_image = car_image.rotate(car_rotate, expand=True)
             draw_car_with_shadow(car_image, overlay, dx + car_x, dy + car_y)
+        else:
+            # Создаем паттерн с диагональными полосами
+            pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
+                                              stripe_width=4,
+                                              color2=COLORS[status],
+                                              color1=(0, 0, 0, 0))
+            # Вставляем паттерн в прямоугольник
+            overlay.paste(pattern, (dx + x, dy + y), pattern)
 
     if frame_index:
         # Рисуем мусорку
