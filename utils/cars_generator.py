@@ -402,6 +402,50 @@ def make_rain_layer(seg, drop_count=400):
         dy = int(length * 0.94)
         draw.line((x, y, x + dx, y + dy), fill=(66, 170, 255, random.randint(200, 255)), width=2)
     rain = layer.filter(ImageFilter.GaussianBlur(1))
+
+    # Молния с небольшой вероятностью
+    if random.random() < 0.01:
+        bolt = Image.new('RGBA', seg.size, (0, 0, 0, 0))
+        ldraw = ImageDraw.Draw(bolt)
+
+        def draw_branch(x0, y0, length, thickness, segments, branch_chance):
+            """Рекурсивно рисует ветку молнии."""
+            if segments <= 0 or thickness < 1:
+                return
+            # координата следующей точки
+            x1 = x0 + random.randint(-w // 10, w // 10)
+            y1 = y0 + length + random.randint(-h // 20, h // 20)
+            ldraw.line((x0, y0, x1, y1), fill=(255, 255, 220, 200), width=thickness)
+
+            # шанс ветвления
+            if random.random() < branch_chance:
+                # боковая ветка
+                draw_branch(x1, y1,
+                            length // 2,
+                            max(1, thickness - 2),
+                            segments - 1,
+                            branch_chance * 0.6)
+            # продолжение ствола
+            draw_branch(x1, y1,
+                        length,
+                        thickness,
+                        segments - 1,
+                        branch_chance)
+
+        # параметры молнии
+        start_x = random.randint(int(w * 0.2), int(w * 0.8))
+        start_y = 0
+        main_length = h // random.randint(segments := 5, 6)
+        main_thickness = random.randint(4, 6)
+        draw_branch(start_x, start_y,
+                    length=main_length,
+                    thickness=main_thickness,
+                    segments=6,  # глубина рекурсии
+                    branch_chance=0.3)  # начальный шанс ветвления
+
+        bolt = bolt.filter(ImageFilter.GaussianBlur(1))
+        # Объединяем дождь и молнию
+        rain = Image.alpha_composite(rain, bolt)
     return Image.alpha_composite(seg, rain)
 
 
@@ -485,10 +529,10 @@ if __name__ == "__main__":
     players = [Player("Alice", 0), Player("Bob", 0), Player("Charlie", 0),
                Player("Dave", 1), Player("Eve", 1), Player("Frank", 1),
                Player("Grace", 2), Player("Helen", 2), Player("Ivan", 2)]
-    # winners = create_race_gif(players, 2)
-    # print(winners)
-    track = draw_start_race_track(players, bg_color=(120, 120, 120))
-    # rain = make_rain_layer(track)
-    # track = Image.alpha_composite(track, rain)
-    track.save("race_track2.png")
-    track.show()
+    winners = create_race_gif(players, 2)
+    print(winners)
+    # track = draw_start_race_track(players, bg_color=(120, 120, 120))
+    # # rain = make_rain_layer(track)
+    # # track = Image.alpha_composite(track, rain)
+    # track.save("race_track2.png")
+    # track.show()
