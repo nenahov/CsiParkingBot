@@ -7,6 +7,7 @@ from moviepy import ImageSequenceClip
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 cars_count = 24
+extra_cars_count = 29
 regular_font = ImageFont.truetype("ariali.ttf", 40)
 car_w, car_h = (100, 50)
 finish_block_size = 5
@@ -23,7 +24,7 @@ def reduce_opacity(image: Image.Image, opacity: float) -> Image.Image:
     return image
 
 
-def generate_carousel_image(current_index: int) -> io.BytesIO:
+def generate_carousel_image(current_index: int, cars_count_for_driver: int) -> io.BytesIO:
     """
     Генерирует изображение карусели из 7 спрайтов.
 
@@ -58,7 +59,7 @@ def generate_carousel_image(current_index: int) -> io.BytesIO:
     right_extents = []
     for off in offsets:
         scale = scale_factors[abs(off)]
-        idx = (current_index + off) % cars_count
+        idx = (current_index + off) % cars_count_for_driver
         img = get_car(idx)
         new_size = (int(base_w * scale), int(base_h * scale))
         img = img.resize(new_size)  # , Image.ANTIALIAS)
@@ -101,7 +102,7 @@ def generate_carousel_image(current_index: int) -> io.BytesIO:
 
 
 def get_car(current_index):
-    current_index = current_index % cars_count
+    current_index = current_index
     return extract_sprite(cars3, (50 * (current_index % 12), 100 * (current_index // 12),
                                   50 * (1 + (current_index % 12)), 100 * (1 + (current_index // 12))))
 
@@ -128,7 +129,7 @@ def draw_race_track(players, lane_height=70, track_length=800,
     - Чекер-финиш: две колонки черно-белых квадратов
     """
     img_height = len(players) * lane_height
-    img = Image.new('RGBA', (track_length, img_height), bg_color)
+    img = Image.new('RGB', (track_length, img_height), bg_color)
     draw = ImageDraw.Draw(img)
 
     # Линия старта – слева
@@ -190,7 +191,7 @@ def draw_start_race_track(players, lane_height=70, track_length=800,
                           bg_color=bg_color)
     for idx, player in enumerate(players):
         y = idx * 70 + (70 - car_h) // 2
-        car = get_car(player.attributes.get("car_index", player.id))
+        car = get_car(player.attributes.get("car_index", player.id % cars_count))
         car = car.rotate(270, expand=True)
         draw_car_with_shadow(car, img, 0, y)
     return img
@@ -236,7 +237,7 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
         frame = track.copy()
         step_winners = []
         for idx in range(0, lane_count):
-            car = get_car(players[idx].attributes.get("car_index", players[idx].id))
+            car = get_car(players[idx].attributes.get("car_index", players[idx].id % cars_count))
             car = car.rotate(270, expand=True)
             part_before = int(seg_count * positions[idx] // max_x)
             positions[idx] = positions[idx] + base_speeds[idx]
@@ -478,15 +479,16 @@ if __name__ == "__main__":
             self.id = random.randint(1, 24)
             self.attributes = dict()
             self.attributes["wheels"] = wheels
+            self.attributes["car_index"] = self.id
 
 
     players = [Player("Alice", 0), Player("Bob", 0), Player("Charlie", 0),
                Player("Dave", 1), Player("Eve", 1), Player("Frank", 1),
                Player("Grace", 2), Player("Helen", 2), Player("Ivan", 2)]
-    winners = create_race_gif(players, 2)
-    print(winners)
-    # track = draw_race_track(players)
+    # winners = create_race_gif(players, 2)
+    # print(winners)
+    track = draw_start_race_track(players, bg_color=(120, 120, 120))
     # rain = make_rain_layer(track)
     # track = Image.alpha_composite(track, rain)
-    # track.save("race_track2.png")
-    # track.show()
+    track.save("race_track2.png")
+    track.show()

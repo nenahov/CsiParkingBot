@@ -8,7 +8,7 @@ from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.notification_sender import send_reply, EventType, NotificationSender, send_alarm
-from utils.cars_generator import generate_carousel_image, cars_count
+from utils.cars_generator import generate_carousel_image, cars_count, extra_cars_count
 
 router = Router()
 
@@ -87,7 +87,8 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
                        flags={"check_driver": True, "check_callback": True})
 async def edit_avatar(event: CallbackQuery, driver: Driver):
     current_index = driver.attributes.get("car_index", driver.id)
-    photo = generate_carousel_image(current_index)
+    cars_count_for_driver = extra_cars_count if driver.attributes.get("extra_cars", 0) > 0 else cars_count
+    photo = generate_carousel_image(current_index, cars_count_for_driver)
     await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                      photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
                                      reply_markup=get_carousel_keyboard(current_index, driver.chat_id))
@@ -117,10 +118,10 @@ async def carousel_callback(event: CallbackQuery, driver: Driver):
     except ValueError:
         await event.answer("Ошибка данных!", show_alert=True)
         return
+    cars_count_for_driver = extra_cars_count if driver.attributes.get("extra_cars", 0) > 0 else cars_count
+    new_index = (current_index + int(direction)) % cars_count_for_driver
 
-    new_index = (current_index + int(direction)) % cars_count
-
-    photo = generate_carousel_image(new_index)
+    photo = generate_carousel_image(new_index, cars_count_for_driver)
     try:
         await event.message.edit_media(
             media=InputMediaPhoto(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,

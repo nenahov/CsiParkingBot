@@ -6,7 +6,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
-from utils.cars_generator import get_car, draw_car_with_shadow, make_sun_glare_layer, make_rain_layer, get_clouds_layer
+from utils.cars_generator import get_car, draw_car_with_shadow, make_sun_glare_layer, make_rain_layer, get_clouds_layer, \
+    cars_count
 
 # Цвета для разных статусов
 COLORS = {
@@ -103,9 +104,9 @@ async def generate_parking_map(parking_spots,
                 and spot.status is not None
                 and spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND)):
             if spot.current_driver:
-                car_index = spot.current_driver.attributes.get("car_index", spot.current_driver_id)
+                car_index = spot.current_driver.attributes.get("car_index", spot.current_driver_id % cars_count)
             else:
-                car_index = spot.current_driver_id
+                car_index = spot.current_driver_id % cars_count
 
             car_image = get_car(car_index)
 
