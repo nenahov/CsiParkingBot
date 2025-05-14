@@ -441,7 +441,7 @@ def make_rain_layer(seg, drop_count=400):
                     length=main_length,
                     thickness=main_thickness,
                     segments=6,  # глубина рекурсии
-                    branch_chance=0.3)  # начальный шанс ветвления
+                    branch_chance=0.7)  # начальный шанс ветвления
 
         bolt = bolt.filter(ImageFilter.GaussianBlur(1))
         # Объединяем дождь и молнию
