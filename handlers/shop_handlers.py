@@ -50,7 +50,7 @@ async def new_shop(message: Message, session: AsyncSession, driver: Driver, curr
     content += Text("\nИли ") + Code("Новый магазин добрых дел") + Text(" в ЛС без указания товаров.")
     content += '\n\n'
     content += Text("Кнопка ") + Bold("'❎ Свернуть лавочку'") + Text(" скрывает магазин в чате.\n")
-    content += Text("Заново отобразить его можно командой ") + Code("Открыть магазин") + Text(".")
+    content += Text("Заново отобразить его можно командой ") + Code("Открыть магазин")
     content += '\n\n'
     content += Text("Приятных добрых дел!")
     content += '\n\n'
