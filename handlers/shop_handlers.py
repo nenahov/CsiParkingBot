@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict
@@ -16,7 +17,7 @@ from services.driver_service import DriverService
 from services.notification_sender import send_reply, send_alarm
 
 router = Router()
-
+logger = logging.getLogger(__name__)
 
 def get_cost(price):
     vat = max(1, round(price * 0.1))
@@ -119,6 +120,16 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
     await send_alarm(callback, f"✅ '{item['description']}' куплен!\n\nПродавец: {seller.title}")
     content, builder = await get_shop_content_and_keyboard(seller, is_private)
     await send_reply(callback, content, builder)
+    try:
+        await callback.bot.send_message(chat_id=driver.chat_id,
+                                        text=f"✅ '{item['description']}' куплен за {get_cost(item['price'])} 💟\n\nПродавец: {seller.title}")
+    except Exception as e:
+        logging.error(f"Error in send message: {e}")
+    try:
+        await callback.bot.send_message(chat_id=seller.chat_id,
+                                        text=f"✅ '{item['description']}' продан за {item['price']} 💟\n\nПокупатель: {driver.title}")
+    except Exception as e:
+        logging.error(f"Error in send message: {e}")
 
 
 @router.message(

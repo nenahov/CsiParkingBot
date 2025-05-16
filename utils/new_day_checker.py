@@ -99,9 +99,9 @@ async def check_auto_karma_for_absent(bot, session, param_service, current_day):
             data = await bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
             driver.attributes["plus"] = -1
             driver.attributes["karma"] = driver.get_karma() + data.dice.value
-            await  bot.send_message(chat_id=driver.chat_id,
-                                    text=f"💟 Вы получили +{data.dice.value} в карму. /status"
-                                         f"\n\nЗавтра будет шанс получить еще.")
+            await bot.send_message(chat_id=driver.chat_id,
+                                   text=f"💟 Вы получили +{data.dice.value} в карму. /status"
+                                        f"\n\nЗавтра будет шанс получить еще.")
             logger.info(f"Авторозыгрыш кармы для {driver.description}: +{data.dice.value}")
             await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
                                                    f"Авторозыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
