@@ -60,6 +60,35 @@ async def new_shop(message: Message, session: AsyncSession, driver: Driver, curr
     await send_reply(message, content, builder)
 
 
+@router.message(
+    F.text.regexp(r"(?i).*открыть магазин"),
+    flags={"lock_operation": "shop", "check_driver": True})
+async def show_shop(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
+    items = driver.attributes.get("shop_items", [])
+    if not items:
+        await send_alarm(message, "⚠️ Магазин не создан")
+        return
+    content, builder = await get_shop_content_and_keyboard(driver, is_private)
+    await send_reply(message, content, builder)
+    if not is_private:
+        await AuditService(session).log_action(driver.id, UserActionType.SHOP, current_day, 0,
+                                               f'{driver.title} показывает магазин добрых дел')
+
+
+@router.message(
+    F.text.regexp(r"(?i).*закрыть магазин"),
+    flags={"lock_operation": "shop", "check_driver": True})
+async def close_shop(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
+    items = []
+    driver.attributes["shop_id"] = 1 + driver.attributes.get("shop_id", 0)
+    driver.attributes["shop_items"] = items
+
+    await AuditService(session).log_action(driver.id, UserActionType.SHOP, current_day, len(items),
+                                           f'{driver.title} закрывает магазин добрых дел')
+    builder = InlineKeyboardBuilder()
+    await send_reply(message, Bold("✖️ Магазин закрыт!"), builder)
+
+
 @router.callback_query(MyCallback.filter(F.action == "hide-shop"),
                        flags={"lock_operation": "shop", "check_driver": True, "check_callback": True})
 async def hide_shop(callback, session, driver, current_day, is_private):
@@ -134,17 +163,6 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
                                         text=f"✅ '{item['description']}' продан за {item['price']} 💟\n\nПокупатель: {driver.title}\n\nВаш баланс: {seller.get_karma()} 💟")
     except Exception as e:
         logging.error(f"Error in send message: {e}")
-
-
-@router.message(
-    F.text.regexp(r"(?i).*открыть магазин"),
-    flags={"lock_operation": "shop", "check_driver": True})
-async def show_shop(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
-    content, builder = await get_shop_content_and_keyboard(driver, is_private)
-    await send_reply(message, content, builder)
-    if not is_private:
-        await AuditService(session).log_action(driver.id, UserActionType.SHOP, current_day, 0,
-                                               f'{driver.title} показывает магазин добрых дел')
 
 
 async def get_shop_content_and_keyboard(driver, is_private):

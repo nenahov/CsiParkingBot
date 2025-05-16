@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.filters import or_f
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.formatting import as_list, as_marked_section, Bold, as_key_value, HashTag, Code, Text, TextLink, \
-    Italic
+    Italic, Pre
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import constants
@@ -72,6 +72,7 @@ async def main_commands(message, is_new: bool):
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="⁉️ С чего начать?", callback_data=f"starter_info"))
     builder.add(InlineKeyboardButton(text="ℹ️ Информация", callback_data=f"info_commands"))
+    builder.add(InlineKeyboardButton(text="🏪 Магазин", callback_data=f"shop_commands"))
     # builder.add(InlineKeyboardButton(text="🫶 Бронирование места", callback_data=f"reservation_commands"))
     # builder.add(InlineKeyboardButton(text="🙋 Очередь на парковку", callback_data=f"queue_commands"))
     builder.add(InlineKeyboardButton(text="🤖 Другое", callback_data=f"other_commands"))
@@ -156,6 +157,38 @@ async def info_commands(callback: CallbackQuery):
         InlineKeyboardButton(text="📝 Показать список команд", switch_inline_query_current_chat='Список команд'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1, 2, 2, 1, 1)
+    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("shop_commands"))
+async def shop_commands(callback: CallbackQuery):
+    """Обработчик показа информации о функциях магазина"""
+    content = Bold(f"🏪 Магазин добрых дел 🫶")
+
+    me = await callback.bot.get_me()
+    bot_username = me.username
+
+    if callback.message.chat.type != 'private':
+        content += Bold("\n\n0. Перейдите в личные сообщения с ботом: ")
+        content += TextLink(f"Перейти @{bot_username}", url=f"https://t.me/{bot_username}")
+
+    content += Bold("\n\n1. Сделайте новый магазин со слотами для продажи\n")
+    content += "Напишите боту в ЛС следующий текст:\n"
+    content += Pre("""Новый магазин добрых дел
+10 - Описание первого слота (5)
+75 - Описание второго слота 
+12 - Описание третьего слота (45)
+""")
+    content += "Бот покажет, что магазин создан, а также дальнейшую инструкцию\n"
+    content += Italic("\nВ данном примере будет три слота с ценами: 10, 75, 12 (+НДС) в количестве 5, ∞, 45 шт.")
+
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        InlineKeyboardButton(text="🏪 Создать магазин", switch_inline_query_current_chat='Новый магазин добрых дел'))
+    builder.add(InlineKeyboardButton(text="🫶 Открыть магазин", switch_inline_query_current_chat='Открыть магазин'))
+    builder.add(InlineKeyboardButton(text="✖️ Закрыть магазин", switch_inline_query_current_chat='Закрыть магазин'))
+    builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
+    builder.adjust(1)
     await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
 
 
