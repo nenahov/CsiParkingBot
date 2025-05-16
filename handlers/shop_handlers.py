@@ -100,13 +100,16 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
         await send_reply(callback, content, builder)
         return
 
-    karma = driver.attributes.get("karma", 0)
-    if get_cost(item["price"]) > karma:
+    if seller.id == driver.id:
+        await send_alarm(callback, "⚠️ Нельзя купить у себя")
+        return
+
+    if get_cost(item["price"]) > driver.get_karma():
         await send_alarm(callback, "⚠️ У вас недостаточно кармы")
         return
 
-    driver.attributes["karma"] = karma - get_cost(item["price"])
-    seller.attributes["karma"] = seller.attributes.get("karma", 0) + item["price"]
+    driver.attributes["karma"] = driver.get_karma() - get_cost(item["price"])
+    seller.attributes["karma"] = seller.get_karma() + item["price"]
     await AuditService(session).log_action(driver.id, UserActionType.SHOP_KARMA, current_day, -get_cost(item["price"]),
                                            f'{driver.title} купил товар "{item["description"]}" у {seller.title}')
     await AuditService(session).log_action(seller.id, UserActionType.SHOP_KARMA, current_day, item["price"],
@@ -117,17 +120,18 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
                                            f'{driver.title} купил товар "{item["description"]}" у {seller.title}')
     await AuditService(session).log_action(seller.id, UserActionType.SHOP, current_day, -1,
                                            f'{seller.title} продал товар "{item["description"]}" {driver.title}')
-    await send_alarm(callback, f"✅ '{item['description']}' куплен!\n\nПродавец: {seller.title}")
+    await send_alarm(callback,
+                     f"✅ '{item['description']}' куплен!\n\nПродавец: {seller.title}\n\nВаш баланс: {driver.get_karma()} 💟")
     content, builder = await get_shop_content_and_keyboard(seller, is_private)
     await send_reply(callback, content, builder)
     try:
         await callback.bot.send_message(chat_id=driver.chat_id,
-                                        text=f"✅ '{item['description']}' куплен за {get_cost(item['price'])} 💟\n\nПродавец: {seller.title}")
+                                        text=f"✅ '{item['description']}' куплен за {get_cost(item['price'])} 💟\n\nПродавец: {seller.title}\n\nВаш баланс: {driver.get_karma()} 💟")
     except Exception as e:
         logging.error(f"Error in send message: {e}")
     try:
         await callback.bot.send_message(chat_id=seller.chat_id,
-                                        text=f"✅ '{item['description']}' продан за {item['price']} 💟\n\nПокупатель: {driver.title}")
+                                        text=f"✅ '{item['description']}' продан за {item['price']} 💟\n\nПокупатель: {driver.title}\n\nВаш баланс: {seller.get_karma()} 💟")
     except Exception as e:
         logging.error(f"Error in send message: {e}")
 
