@@ -20,8 +20,8 @@ from utils.cars_generator import draw_start_race_track, create_race_gif
 
 PLACE_PERCENT = {1: 35, 2: 25, 3: 17, 4: 12, 5: 8}
 
-MIN_PLAYERS = 6
-MAX_PLAYERS = 10
+MIN_PLAYERS = 7
+MAX_PLAYERS = 12
 FEE = 5
 
 router = Router()
