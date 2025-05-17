@@ -28,7 +28,7 @@ class UserAuditDAO:
 
     async def get_weekly_karma(self, limit: int, sign: int = 0, act: str = ''):
         if not act:
-            act_str = "'DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA'"
+            act_str = "'DRAW_KARMA','GAME_KARMA','GET_ADMIN_KARMA','SHOP_KARMA'"
         else:
             act_str = "'" + UserActionType[act].name + "'"
         stmt = text(f"""

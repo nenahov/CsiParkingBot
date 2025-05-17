@@ -63,6 +63,12 @@ async def show_achievements(event, session, driver: Driver, current_day):
     queue_expert = len(set(a.current_day for a in actions if a.action == UserActionType.LEAVE_QUEUE))
     content += get_achievement_row("Очередной эксперт 🏃", queue_expert, 2, 5, 10)
 
+    expensive = sum(-a.num for a in actions if a.action == UserActionType.SHOP_KARMA and a.num < 0)
+    content += get_achievement_row("Дорогой клиент 🤑", expensive, 5, 20, 50)
+
+    shopaholic = sum(1 for a in actions if a.action == UserActionType.SHOP_KARMA and a.num < 0)
+    content += get_achievement_row("Шопоголик 🏷️", shopaholic, 2, 5, 10)
+
     # TODO: add achievements
 
     builder = InlineKeyboardBuilder()
@@ -74,7 +80,7 @@ async def show_achievements(event, session, driver: Driver, current_day):
 
 def get_achievement_row(title: str, current_value: int, bronze: int, silver: int, gold: int, threshold: int = 1):
     if current_value >= gold:
-        return Bold(f"🥇 {title}\n")
+        return Bold(f"🥇 {title}") + f" [{current_value}/{gold}]\n"
     elif current_value >= silver:
         return Bold(f"🥈 {title}") + f" [{current_value}/{gold}]\n"
     elif current_value >= bronze:
@@ -103,6 +109,8 @@ async def show_achievements_info(event, session, driver: Driver):
             as_key_value("🌈 Радуга фортуны", "Разное количество кармы несколько дней подряд"),
             as_key_value("🚗 По колее", "Одно и то же количество кармы несколько дней подряд"),
             as_key_value("🏎️ Гонщик", "Участие в игре «Гонки»"),
+            as_key_value("🤑 Дорогой клиент", "Сумма покупок в магазине"),
+            as_key_value("🏷️ Шопоголик", "Количество покупок в магазине"),
             marker="    ",
         ),
         as_marked_section(
@@ -158,9 +166,12 @@ async def show_karma_week(event, session, limit, sign, act):
     add_karma_button(builder, '', 1, limit, "∑+", sign, act)
     add_karma_button(builder, '', -1, limit, "∑-", sign, act)
     add_karma_button(builder, UserActionType.DRAW_KARMA.name, 0, limit, "🎲", sign, act)
-    add_karma_button(builder, UserActionType.GAME_KARMA.name, 0, limit, "🕹", sign, act)
     add_karma_button(builder, UserActionType.GET_ADMIN_KARMA.name, 0, limit, "🫶", sign, act)
-    builder.adjust(1, 2, 3)
+    add_karma_button(builder, UserActionType.GAME_KARMA.name, +1, limit, "🕹+", sign, act)
+    add_karma_button(builder, UserActionType.GAME_KARMA.name, -1, limit, "🕹-", sign, act)
+    add_karma_button(builder, UserActionType.SHOP_KARMA.name, +1, limit, "🏪+", sign, act)
+    add_karma_button(builder, UserActionType.SHOP_KARMA.name, -1, limit, "🏪-", sign, act)
+    builder.adjust(1, 2, 1, 1, 2, 2)
     await send_reply(event, content, builder)
 
 
