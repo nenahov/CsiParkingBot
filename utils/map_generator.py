@@ -6,8 +6,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
-from utils.cars_generator import get_car, draw_car_with_shadow, make_sun_glare_layer, make_rain_layer, get_clouds_layer, \
-    cars_count
+from utils.cars_generator import get_car, draw_car_with_shadow, cars_count
+from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer
 
 # Цвета для разных статусов
 COLORS = {
