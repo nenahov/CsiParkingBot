@@ -87,11 +87,12 @@ class QueueService:
             await self.raffle_off_spot_among_filtered_queue(bot, now, spot, queue, spots, queue)
 
     async def raffle_off_spot_among_filtered_queue(self, bot, now, spot, filtered_queue, spots, queue):
+        add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
         while spot in spots and filtered_queue:
             # Выбираем случайного человека из очереди и случайное свободное место
-            add_weight_karma = int(await ParamService(self.session).get_parameter("add_weight_karma", "0"))
-            q = random.choices(filtered_queue, weights=[max(1, add_weight_karma + q.driver.get_karma())
-                                                        for q in filtered_queue], k=1)[0]
+            q = random.choices(filtered_queue, weights=[
+                max(1, add_weight_karma + q.driver.get_karma() + q.driver.attributes.get("add_weight_karma", 0))
+                for q in filtered_queue], k=1)[0]
 
             # Обновляем данные для выбранного элемента очереди:
             q.spot_id = spot.id

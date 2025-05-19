@@ -42,6 +42,26 @@ class DriverDAO:
         result = await self.session.execute(select(Driver))
         return result.scalars().all()
 
+    async def get_inactive_drivers(self) -> Sequence[Driver]:
+        """Получение всех неактивных водителей"""
+        result = await self.session.execute(select(Driver).where(Driver.enabled.is_(False)))
+        return result.scalars().all()
+
+    async def find_by_text(self, text: str) -> Sequence[Driver]:
+        """
+        Возвращает всех водителей, у которых text встречается
+        в username или description (регистронезависимо).
+        """
+        pattern = f"%{text}%"
+        result = await self.session.execute(select(Driver).filter(
+            or_(
+                Driver.username.ilike(pattern),
+                Driver.description.ilike(pattern)
+            )
+        ))
+        return result.scalars().all()
+
+
     async def delete(self, driver_id: int) -> None:
         """Удаление водителя"""
         await self.session.execute(

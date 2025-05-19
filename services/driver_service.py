@@ -19,11 +19,17 @@ class DriverService:
     async def get_all(self):
         return await self.dao.get_all()
 
+    async def get_inactive_drivers(self):
+        return await self.dao.get_inactive_drivers()
+
     async def get_by_chat_id(self, chat_id: int):
         return await self.dao.get_by_chat_id(chat_id)
 
     async def get_by_id(self, id: int):
         return await self.dao.get_by_id(id)
+
+    async def find_by_text(self, text: str) -> Sequence[Driver]:
+        return await self.dao.find_by_text(text)
 
     async def remove_attribute_for_all(self, key: str):
         await self.dao.remove_attribute_for_all(key)

@@ -19,6 +19,7 @@ class UserActionType(PyEnum):
     SHOP_KARMA = "Траты в магазине"
     GAME = "Играет в мини-игры"
     GAME_KARMA = "Получил карму в мини-игре"
+    ENABLED = "Включили/выключили аккаунт"
 
 
 class UserAudit(Base):
