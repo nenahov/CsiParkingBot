@@ -115,7 +115,7 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
         content += Bold("Нет закрепленных мест")
 
     content += '\n\n'
-    content += as_key_value("Карма", driver.get_karma())
+    content += as_key_value("Карма", f"{driver.get_karma()} 💟")
 
     return content, builder
 
@@ -424,4 +424,11 @@ async def check_spot(message: Message, session: AsyncSession, current_day, match
         await send_reply(message, Text(f"❌ Место {spot_id} не найдено"), InlineKeyboardBuilder())
         return
     reservations = await ReservationService(session).get_spot_reservations(spot_id, current_day.weekday())
-    await send_reply(message, Text(await get_spot_info(spot, reservations, session)), InlineKeyboardBuilder())
+    content = Text(await get_spot_info(spot, reservations, session))
+    await session.refresh(spot, ["drivers"])
+    content += '\n\n'
+    content += as_marked_section(Bold("Закрепленные водители:"),
+                                 *[driver.description for driver in spot.drivers],
+                                 marker="• ",
+                                 )
+    await send_reply(message, content, InlineKeyboardBuilder())
