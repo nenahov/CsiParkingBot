@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config.database import create_database, db_pool
 from handlers import main_handlers, reservation_handlers, map_handlers, user_handlers, queue_handlers, admin_handlers, \
     game_tetris_handlers, commands_handlers, settings_handlers, game_parking_handlers, game_race_handlers, \
-    achievements_handlers, shop_handlers
+    achievements_handlers, shop_handlers, game_tic_tac_toe
 from middlewares.admin_check import AdminCheckMiddleware
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
@@ -67,9 +67,12 @@ async def main():
     dp.include_router(admin_handlers.router)
     dp.include_router(main_handlers.router)
     dp.include_router(commands_handlers.router)
-    dp.include_router(game_tetris_handlers.router)
+
     dp.include_router(game_parking_handlers.router)
+    dp.include_router(game_tic_tac_toe.router)
     dp.include_router(game_race_handlers.router)
+    dp.include_router(game_tetris_handlers.router)
+
     dp.include_router(settings_handlers.router)
     dp.include_router(achievements_handlers.router)
     dp.include_router(shop_handlers.router)
