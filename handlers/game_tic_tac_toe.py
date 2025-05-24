@@ -4,7 +4,7 @@ from aiogram import F, Router
 from aiogram import types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton
-from aiogram.utils.formatting import Bold, Text
+from aiogram.utils.formatting import Bold, Text, TextLink
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,10 +14,7 @@ from services.notification_sender import send_reply, send_alarm
 
 router = Router()
 
-title_x = '🚗'
-title_current_x = '🚘'
-title_o = '🚕'
-title_current_o = '🚖'
+default_title = '🚗🚘🚕🚖'
 
 w, h = (8, 10)
 WIN_LENGTH = 5
@@ -78,7 +75,7 @@ def find_win_line(field: list[list[int]], symbol: int) -> list[tuple[int, int]] 
 
 
 # --- Inline keyboard builder ------------------------------------------------
-def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: int,
+def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: int, title: str,
                 current_move: tuple[int, int] | None = None,
                 win_line: list[tuple[int, int]] | None = None) -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
@@ -88,10 +85,10 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
             v = field[i][j]
             if (win_line and (i, j) in win_line) or (current_move and i == current_move[0] and j == current_move[1]):
                 # выделяем символами победителя
-                emoji = title_current_x if v == 1 else title_current_o
+                emoji = title[1] if v == 1 else title[3]
             else:
-                emoji = '➖' if v == 0 else (title_x if v == 1 else title_o)
-            data = f"{i}{j}|{state_str}|{turn}|{p1},{p2}"
+                emoji = '➖' if v == 0 else (title[0] if v == 1 else title[2])
+            data = f"{i}{j}|{state_str}|{turn}|{p1},{p2}|{title}"
             # если клетка занята или игра закончена, блокируем кнопку
             btn = InlineKeyboardButton(text=emoji, callback_data=data if (v == 0 and not win_line) else "IGNORE")
             row.append(btn)
@@ -103,16 +100,21 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
 # --- Handlers ----------------------------------------------------------------
 @router.message(Command("XO"), flags={"check_driver": True})
 async def cmd_start(message: types.Message):
-    # Ожидаем команду: /XO
+    # Ожидаем команду: /XO xXoO
+    split = message.text.split()
+    if len(split) > 1 and len(split[1]) == 4:
+        title = split[1]
+    else:
+        title = default_title
     p1 = 0
     p2 = 0
     # Инициализировать пустое поле
     field = [[0] * w for _ in range(h)]
     state_str = encode_field(field)
     turn = 1  # 1 = X, 2 = O
-    kb = build_board(field, state_str, turn, p1, p2)
-    content = Bold(f"Крестики-нолики {h}×{w}, {WIN_LENGTH} в ряд.)")
-    content += f"\n{title_x} ходит первым."
+    kb = build_board(field, state_str, turn, p1, p2, title)
+    content = Bold(f"Крестики-нолики {w}×{h}, {WIN_LENGTH} в ряд.)")
+    content += f"\n{title[0]} ходит первым."
     await send_reply(message, content, kb)
 
 
@@ -123,7 +125,13 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
         await callback.answer()
         return
     # Разобрать данные
-    pos, state_str, turn_str, players = data.split('|')
+    title = None
+    try:
+        pos, state_str, turn_str, players, title = data.split('|')
+    except:
+        pos, state_str, turn_str, players = data.split('|')
+    if not title or len(title) != 4:
+        title = default_title
     i, j = int(pos[0]), int(pos[1])
     turn = int(turn_str)
     p1, p2 = map(int, players.split(','))
@@ -150,25 +158,29 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
     driver_service = DriverService(session)
     player_1 = await driver_service.get_by_chat_id(p1) if p1 != 0 else None
     player_2 = await driver_service.get_by_chat_id(p2) if p2 != 0 else None
-    content = Bold(f"{get_player_title(title_x, player_1)} vs {get_player_title(title_o, player_2)}\n\n")
+    vs = Bold(f"\n\n{get_player_title(title[0], player_1)}\nvs\n{get_player_title(title[2], player_2)}")
     # Проверяем победу
     win_line = find_win_line(field, turn)
     if win_line:
-        content += Text(
-            f"Игрок {get_player_title(title_x, player_1) if turn == 1 else get_player_title(title_o, player_2)} выиграл!")
+        content = Text(
+            f"Игрок {get_player_title(title[0], player_1) if turn == 1 else get_player_title(title[2], player_2)} выиграл!")
         # Рисуем финальное поле без callback_data
-        kb = build_board(field, state_str, turn, p1, p2, (i, j), win_line)
-        await send_reply(callback, content, kb)
+        kb = build_board(field, state_str, turn, p1, p2, title, (i, j), win_line)
+        await send_reply(callback, content + vs, kb)
         return
     # Иначе меняем ход
     next_turn = 2 if turn == 1 else 1
     new_state = encode_field(field)
-    kb = build_board(field, new_state, next_turn, p1, p2, (i, j))
-    content += Text(
-        f"Ход {get_player_title(title_x, player_1) if next_turn == 1 else get_player_title(title_o, player_2)}")
-    await send_reply(callback, content, kb)
+    kb = build_board(field, new_state, next_turn, p1, p2, title, (i, j))
+    content = Text("Ход ")
+    content += get_player_title_url(title[0], player_1) if next_turn == 1 else get_player_title_url(title[2], player_2)
+    await send_reply(callback, content + vs, kb)
     await callback.answer()
 
 
 def get_player_title(title: str, player: Driver):
     return f"{title} {player.description}" if player else title
+
+
+def get_player_title_url(title: str, player: Driver):
+    return Text(f"{title} ") + TextLink(player.title, url=f"tg://user?id={player.chat_id}") if player else Text(title)
