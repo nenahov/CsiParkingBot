@@ -77,23 +77,35 @@ def find_win_line(field: list[list[int]], symbol: int) -> list[tuple[int, int]] 
 # --- Inline keyboard builder ------------------------------------------------
 def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: int, title: str,
                 current_move: tuple[int, int] | None = None,
+                draw_offers: tuple[bool, bool] = (False, False),
                 win_line: list[tuple[int, int]] | None = None) -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
+    d1, d2 = draw_offers
+    is_end = (d1 and d2) or win_line
+    count_move = 0
     for i in range(h):
         row = []
         for j in range(w):
             v = field[i][j]
+            if v != 0:
+                count_move += 1
             if (win_line and (i, j) in win_line) or (current_move and i == current_move[0] and j == current_move[1]):
                 # выделяем символами победителя
                 emoji = title[1] if v == 1 else title[3]
             else:
                 emoji = '➖' if v == 0 else (title[0] if v == 1 else title[2])
-            data = f"{i}{j}|{state_str}|{turn}|{p1},{p2}|{title}"
+            data = f"{i}{j}|{state_str}|{turn}|{p1},{p2}|{title}|{int(d1)},{int(d2)}"
             # если клетка занята или игра закончена, блокируем кнопку
-            btn = InlineKeyboardButton(text=emoji, callback_data=data if (v == 0 and not win_line) else "IGNORE")
+            btn = InlineKeyboardButton(text=emoji, callback_data=data if (v == 0 and not is_end) else "IGNORE")
             row.append(btn)
         kb.row(*row)
-    kb.adjust(w)
+
+    if count_move > 15:
+        # Ничью предлагаем не сразу
+        label = 'Ничья 🤝' if (d1 and d2) else ('Ничья ❓' if (d1 or d2) else 'Предложить ничью')
+        draw_data = f"D|{state_str}|{turn}|{p1},{p2}|{title}|{int(d1)},{int(d2)}"
+        kb.row(InlineKeyboardButton(text=label, callback_data=draw_data if not is_end else "IGNORE"))
+
     return kb
 
 
@@ -125,18 +137,18 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
         await callback.answer()
         return
     # Разобрать данные
-    title = None
-    try:
-        pos, state_str, turn_str, players, title = data.split('|')
-    except:
-        pos, state_str, turn_str, players = data.split('|')
+    pos, state_str, turn_str, players, title, draw, _ = (data + "|||||||").split('|', 6)
     if not title or len(title) != 4:
         title = default_title
-    i, j = int(pos[0]), int(pos[1])
+    if not draw:
+        draw_offers = (False, False)
+    else:
+        d1, d2 = map(int, draw.split(','))
+        draw_offers = (bool(d1), bool(d2))
     turn = int(turn_str)
     p1, p2 = map(int, players.split(','))
     # Проверяем, чей ход
-    user_id = callback.from_user.id
+    user_id = driver.id
     if turn == 1:
         if p1 == 0 and p2 != user_id:
             p1 = user_id
@@ -145,35 +157,62 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
         if p2 == 0 and p1 != user_id:
             p2 = user_id
         expected = p2
+
+    current_move = (-1, -1)
+    if pos == 'D':
+        # Предложить ничью
+        if turn == 1:
+            if p1 == user_id:
+                draw_offers = (not draw_offers[0], draw_offers[1])
+            elif p2 == user_id:
+                draw_offers = (draw_offers[0], not draw_offers[1])
+            else:
+                await send_alarm(callback, "Не Ваша игра!")
+                return
+        else:
+            if p2 == user_id:
+                draw_offers = (draw_offers[0], not draw_offers[1])
+            elif p1 == user_id:
+                draw_offers = (not draw_offers[0], draw_offers[1])
+            else:
+                await send_alarm(callback, "Не Ваша игра!")
+                return
+
     if user_id != expected:
-        await send_alarm(callback, "Не ваш ход!")
+        await send_alarm(callback, "Не Ваш ход!")
         return
+
+    next_turn = turn
+    new_state = state_str
     # Восстанавливаем поле и делаем ход
     field = decode_field(state_str)
-    if field[i][j] != 0:
-        await callback.answer()
-        return
-    field[i][j] = turn
+    if pos != 'D':
+        i, j = int(pos[0]), int(pos[1])
+        if field[i][j] != 0:
+            await callback.answer()
+            return
+        field[i][j] = turn
+        current_move = (i, j)
+        next_turn = 2 if turn == 1 else 1
+        new_state = encode_field(field)
 
     driver_service = DriverService(session)
-    player_1 = await driver_service.get_by_chat_id(p1) if p1 != 0 else None
-    player_2 = await driver_service.get_by_chat_id(p2) if p2 != 0 else None
-    vs = Bold(f"\n\n{get_player_title(title[0], player_1)}\nvs\n{get_player_title(title[2], player_2)}")
+    player_1 = await driver_service.get_by_id(p1) if p1 != 0 else None
+    player_2 = await driver_service.get_by_id(p2) if p2 != 0 else None
+    vs = Bold(f"\n\n{get_player_title(title[0], player_1)} vs {get_player_title(title[2], player_2)}")
     # Проверяем победу
     win_line = find_win_line(field, turn)
     if win_line:
         content = Text(
             f"Игрок {get_player_title(title[0], player_1) if turn == 1 else get_player_title(title[2], player_2)} выиграл!")
-        # Рисуем финальное поле без callback_data
-        kb = build_board(field, state_str, turn, p1, p2, title, (i, j), win_line)
-        await send_reply(callback, content + vs, kb)
-        return
-    # Иначе меняем ход
-    next_turn = 2 if turn == 1 else 1
-    new_state = encode_field(field)
-    kb = build_board(field, new_state, next_turn, p1, p2, title, (i, j))
-    content = Text("Ход ")
-    content += get_player_title_url(title[0], player_1) if next_turn == 1 else get_player_title_url(title[2], player_2)
+    elif draw_offers[0] and draw_offers[1]:
+        content = Text("Ничья!")
+    else:
+        content = Text("Ход ")
+        content += get_player_title_url(title[0], player_1) if next_turn == 1 \
+            else get_player_title_url(title[2], player_2)
+
+    kb = build_board(field, new_state, next_turn, p1, p2, title, current_move, draw_offers, win_line)
     await send_reply(callback, content + vs, kb)
     await callback.answer()
 
