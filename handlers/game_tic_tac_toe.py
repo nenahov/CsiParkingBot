@@ -125,7 +125,7 @@ async def cmd_start(message: types.Message):
     state_str = encode_field(field)
     turn = 1  # 1 = X, 2 = O
     kb = build_board(field, state_str, turn, p1, p2, title)
-    content = Bold(f"Крестики-нолики {w}×{h}, {WIN_LENGTH} в ряд.)")
+    content = Bold(f"Крестики-нолики {w}×{h}, {WIN_LENGTH} в ряд.")
     content += f"\n{title[0]} ходит первым."
     await send_reply(message, content, kb)
 
