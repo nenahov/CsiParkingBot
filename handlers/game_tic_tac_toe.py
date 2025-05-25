@@ -1,4 +1,5 @@
 import base64
+import random
 
 from aiogram import F, Router
 from aiogram import types
@@ -74,11 +75,61 @@ def find_win_line(field: list[list[int]], symbol: int) -> list[tuple[int, int]] 
     return None
 
 
+def evaluate_move(field, i, j, player, opponent):
+    """
+    Оценивает потенциал хода для игрока и необходимость блокировки противника.
+    """
+
+    def count_sequence(x, y, dx, dy, symbol):
+        count = 0
+        for step in range(1, 5):
+            nx, ny = x + dx * step, y + dy * step
+            if 0 <= nx < len(field) and 0 <= ny < len(field[0]) and field[nx][ny] == symbol:
+                count += 1
+            else:
+                break
+        return count
+
+    directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
+    max_player = 0
+    max_opponent = 0
+    for dx, dy in directions:
+        player_count = count_sequence(i, j, dx, dy, player) + count_sequence(i, j, -dx, -dy, player)
+        opponent_count = count_sequence(i, j, dx, dy, opponent) + count_sequence(i, j, -dx, -dy, opponent)
+        max_player = max(max_player, player_count)
+        max_opponent = max(max_opponent, opponent_count)
+    return max_player, max_opponent
+
+
+def bot_move(field, player=2, opponent=1):
+    """
+    Выбирает лучший ход для бота на основе оценки потенциала и блокировки.
+    """
+    best_score = -1
+    best_moves = []
+    for i in range(len(field)):
+        for j in range(len(field[0])):
+            if field[i][j] == 0:
+                player_seq, opponent_seq = evaluate_move(field, i, j, player, opponent)
+                if player_seq >= 4:
+                    return (i, j)  # Победа
+                if opponent_seq >= 4:
+                    return (i, j)  # Блокировка
+                score = max(player_seq, opponent_seq)
+                if score > best_score:
+                    best_score = score
+                    best_moves = [(i, j)]
+                elif score == best_score:
+                    best_moves.append((i, j))
+    return random.choice(best_moves) if best_moves else None
+
+
 # --- Inline keyboard builder ------------------------------------------------
 def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: int, title: str,
                 current_move: tuple[int, int] | None = None,
                 draw_offers: tuple[bool, bool] = (False, False),
-                win_line: list[tuple[int, int]] | None = None) -> InlineKeyboardBuilder:
+                win_line: list[tuple[int, int]] | None = None,
+                is_private=False) -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
     d1, d2 = draw_offers
     is_end = (d1 and d2) or win_line
@@ -100,7 +151,7 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
             row.append(btn)
         kb.row(*row)
 
-    if count_move > 15:
+    if not is_private and count_move > 15:
         # Ничью предлагаем не сразу
         label = 'Ничья 🤝' if (d1 and d2) else ('Ничья ❓' if (d1 or d2) else 'Предложить ничью')
         draw_data = f"D|{state_str}|{turn}|{p1},{p2}|{title}|{int(d1)},{int(d2)}"
@@ -131,7 +182,7 @@ async def cmd_start(message: types.Message):
 
 
 @router.callback_query(F.data, flags={"check_driver": True})
-async def process_move(callback: types.CallbackQuery, driver: Driver, session: AsyncSession):
+async def process_move(callback: types.CallbackQuery, driver: Driver, session: AsyncSession, is_private):
     data = callback.data
     if data == "IGNORE":
         await callback.answer()
@@ -208,11 +259,26 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
     elif draw_offers[0] and draw_offers[1]:
         content = Text("Ничья!")
     else:
-        content = Text("Ход ")
-        content += get_player_title_url(title[0], player_1) if next_turn == 1 \
-            else get_player_title_url(title[2], player_2)
+        if is_private:
+            # Ход бота
+            bi, bj = bot_move(field)
+            current_move = (bi, bj)
+            if bi >= 0:
+                field[bi][bj] = 2
+                if win_line := find_win_line(field, 2):
+                    content = Text("Бот в этот раз сильнее...")
+                else:
+                    content = Text("Ваш ход!")
+            else:
+                content = Text("Что-то пошло не так!")
+            next_turn = 1
+            new_state = encode_field(field)
+        else:
+            content = Text("Ход ")
+            content += get_player_title_url(title[0], player_1) if next_turn == 1 \
+                else get_player_title_url(title[2], player_2)
 
-    kb = build_board(field, new_state, next_turn, p1, p2, title, current_move, draw_offers, win_line)
+    kb = build_board(field, new_state, next_turn, p1, p2, title, current_move, draw_offers, win_line, is_private)
     await send_reply(callback, content + vs, kb)
     await callback.answer()
 
