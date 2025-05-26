@@ -1,5 +1,5 @@
 import base64
-import random
+from typing import List, Tuple
 
 from aiogram import F, Router
 from aiogram import types
@@ -19,6 +19,91 @@ default_title = '🚗🚘🚕🚖'
 
 w, h = (8, 10)
 WIN_LENGTH = 5
+
+
+class GomokuAI:
+    # Directions: horizontal, vertical, diag1, diag2
+    DIRECTIONS = [(1, 0), (0, 1), (1, 1), (1, -1)]
+
+    # Score table: (chain length, open ends) -> score
+    SCORE_TABLE = {
+        (5, 0): 100000,
+        (5, 1): 100000,
+        (5, 2): 100000,
+        (4, 2): 10000,  # open four
+        (4, 1): 1000,  # closed four
+        (3, 2): 1000,  # open three
+        (3, 1): 100,  # closed three
+        (2, 2): 100,  # open two
+        (2, 1): 10,  # closed two
+        (1, 2): 10,  # isolated stone
+    }
+
+    @staticmethod
+    def in_bounds(x: int, y: int, rows: int, cols: int) -> bool:
+        return 0 <= x < rows and 0 <= y < cols
+
+    @classmethod
+    def evaluate_position(cls, field: List[List[int]], x: int, y: int, player: int) -> int:
+        """Evaluate heuristic score for placing `player` at (x,y)."""
+        rows, cols = len(field), len(field[0])
+        total_score = 0
+
+        for dx, dy in cls.DIRECTIONS:
+            count = 1  # including this new move
+            open_ends = 0
+
+            # count in positive direction
+            i, j = x + dx, y + dy
+            while cls.in_bounds(i, j, rows, cols) and field[i][j] == player:
+                count += 1
+                i += dx
+                j += dy
+            # check open end
+            if cls.in_bounds(i, j, rows, cols) and field[i][j] == 0:
+                open_ends += 1
+
+            # count in negative direction
+            i, j = x - dx, y - dy
+            while cls.in_bounds(i, j, rows, cols) and field[i][j] == player:
+                count += 1
+                i -= dx
+                j -= dy
+            # check other open end
+            if cls.in_bounds(i, j, rows, cols) and field[i][j] == 0:
+                open_ends += 1
+
+            # cap count at 5
+            count = min(count, 5)
+            # get score
+            total_score += cls.SCORE_TABLE.get((count, open_ends), 0)
+
+        return total_score
+
+    @classmethod
+    def get_best_move(cls, field: List[List[int]]) -> Tuple[int, int]:
+        """Return best move (row, col) for player 2 based on heuristic evaluation."""
+        best_move = (-1, -1)
+        best_score = float('-inf')
+        rows, cols = len(field), len(field[0])
+
+        for i in range(rows):
+            for j in range(cols):
+                if field[i][j] != 0:
+                    continue
+
+                # evaluate for AI (player 2)
+                score_ai = cls.evaluate_position(field, i, j, player=2)
+                # evaluate for opponent (player 1) to block
+                score_op = cls.evaluate_position(field, i, j, player=1)
+                # combined score: favor own moves, but block opponent threats
+                score = score_ai + score_op * 0.9
+
+                if score > best_score:
+                    best_score = score
+                    best_move = (i, j)
+
+        return best_move
 
 
 # --- Encoding utilities -----------------------------------------------------
@@ -73,55 +158,6 @@ def find_win_line(field: list[list[int]], symbol: int) -> list[tuple[int, int]] 
                     x += di
                     y += dj
     return None
-
-
-def evaluate_move(field, i, j, player, opponent):
-    """
-    Оценивает потенциал хода для игрока и необходимость блокировки противника.
-    """
-
-    def count_sequence(x, y, dx, dy, symbol):
-        count = 0
-        for step in range(1, 5):
-            nx, ny = x + dx * step, y + dy * step
-            if 0 <= nx < len(field) and 0 <= ny < len(field[0]) and field[nx][ny] == symbol:
-                count += 1
-            else:
-                break
-        return count
-
-    directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
-    max_player = 0
-    max_opponent = 0
-    for dx, dy in directions:
-        player_count = count_sequence(i, j, dx, dy, player) + count_sequence(i, j, -dx, -dy, player)
-        opponent_count = count_sequence(i, j, dx, dy, opponent) + count_sequence(i, j, -dx, -dy, opponent)
-        max_player = max(max_player, player_count)
-        max_opponent = max(max_opponent, opponent_count)
-    return max_player, max_opponent
-
-
-def bot_move(field, player=2, opponent=1):
-    """
-    Выбирает лучший ход для бота на основе оценки потенциала и блокировки.
-    """
-    best_score = -1
-    best_moves = []
-    for i in range(len(field)):
-        for j in range(len(field[0])):
-            if field[i][j] == 0:
-                player_seq, opponent_seq = evaluate_move(field, i, j, player, opponent)
-                if player_seq >= 4:
-                    return (i, j)  # Победа
-                if opponent_seq >= 4:
-                    return (i, j)  # Блокировка
-                score = max(player_seq, opponent_seq)
-                if score > best_score:
-                    best_score = score
-                    best_moves = [(i, j)]
-                elif score == best_score:
-                    best_moves.append((i, j))
-    return random.choice(best_moves) if best_moves else None
 
 
 # --- Inline keyboard builder ------------------------------------------------
@@ -181,7 +217,7 @@ async def cmd_start(message: types.Message):
     await send_reply(message, content, kb)
 
 
-@router.callback_query(F.data.startswith("XO"), flags={"check_driver": True})
+@router.callback_query(F.data.startswith("XO|"), flags={"check_driver": True})
 async def process_move(callback: types.CallbackQuery, driver: Driver, session: AsyncSession, is_private):
     data = callback.data
     if data == "IGNORE":
@@ -261,7 +297,7 @@ async def process_move(callback: types.CallbackQuery, driver: Driver, session: A
     else:
         if is_private:
             # Ход бота
-            bi, bj = bot_move(field)
+            bi, bj = GomokuAI.get_best_move(field)
             current_move = (bi, bj)
             if bi >= 0:
                 field[bi][bj] = 2
