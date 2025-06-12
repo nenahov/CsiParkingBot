@@ -183,7 +183,7 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
                 emoji = '➖' if v == 0 else (title[0] if v == 1 else title[2])
             data = f"XO|{i}{j}|{state_str}|{turn}|{p1},{p2}|{title}|{int(d1)},{int(d2)}"
             # если клетка занята или игра закончена, блокируем кнопку
-            btn = InlineKeyboardButton(text=emoji, callback_data=data if (v == 0 and not is_end) else "IGNORE")
+            btn = InlineKeyboardButton(text=emoji, callback_data=data if (v == 0 and not is_end) else "pass")
             row.append(btn)
         kb.row(*row)
 
@@ -191,7 +191,7 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
         # Ничью предлагаем не сразу
         label = 'Ничья 🤝' if (d1 and d2) else ('Ничья ❓' if (d1 or d2) else 'Предложить ничью')
         draw_data = f"XO|D|{state_str}|{turn}|{p1},{p2}|{title}|{int(d1)},{int(d2)}"
-        kb.row(InlineKeyboardButton(text=label, callback_data=draw_data if not is_end else "IGNORE"))
+        kb.row(InlineKeyboardButton(text=label, callback_data=draw_data if not is_end else "pass"))
 
     return kb
 
@@ -220,9 +220,6 @@ async def cmd_start(message: types.Message):
 @router.callback_query(F.data.startswith("XO|"), flags={"check_driver": True})
 async def process_move(callback: types.CallbackQuery, driver: Driver, session: AsyncSession, is_private):
     data = callback.data
-    if data == "IGNORE":
-        await callback.answer()
-        return
     # Разобрать данные
     _, pos, state_str, turn_str, players, title, draw, _ = (data + "|||||||").split('|', 7)
     if not title or len(title) != 4:

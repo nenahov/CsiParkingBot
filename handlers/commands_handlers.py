@@ -7,8 +7,15 @@ from aiogram.utils.formatting import as_list, as_marked_section, Bold, as_key_va
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import constants
+from handlers.driver_callback import MyCallback
 
 router = Router()
+
+
+@router.callback_query(or_f(MyCallback.filter(F.action == "pass"), F.data == "pass"),
+                       flags={"check_driver": True})
+async def pass_callback(callback: CallbackQuery):
+    await callback.answer()
 
 
 @router.message(or_f(Command("help", "?", "commands"),

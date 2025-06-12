@@ -1,4 +1,5 @@
 import pickle
+import random
 import re
 from math import ceil
 
@@ -78,14 +79,13 @@ async def get_keyboard_by_game_state(driver, game_state):
     await add_move_button(game_state, "⬆️", builder, driver, 0, -1)
     add_button("✖️", "pass", driver.chat_id, builder)
     await add_move_button(game_state, "⬅️", builder, driver, -1, 0)
-    add_button("🚘", "pass", driver.chat_id, builder)
+    add_button("🚘", "beep", driver.chat_id, builder)
     await add_move_button(game_state, "➡️", builder, driver, 1, 0)
     add_button("✖️", "pass", driver.chat_id, builder)
     await add_move_button(game_state, "⬇️", builder, driver, 0, 1)
     add_button("✖️", "pass", driver.chat_id, builder)
     builder.adjust(3, 3, 3, 1)
     return builder
-
 
 async def add_move_button(game_state, arrow, builder, driver, dx, dy):
     if game_state.is_wall(dx, dy):
@@ -94,8 +94,11 @@ async def add_move_button(game_state, arrow, builder, driver, dx, dy):
         add_button(arrow, "p_move", driver.chat_id, builder, spot_id=dx, day_num=dy)
 
 
-@router.callback_query(MyCallback.filter(F.action == "pass"), flags={"check_driver": True})
+@router.callback_query(MyCallback.filter(F.action == "beep"),
+                       flags={"check_driver": True})
 async def pass_callback(callback: CallbackQuery):
+    if (random.randint(0, 100) < 10):
+        await send_alarm(callback, "🎵 бип-бип!")
     await callback.answer()
 
 

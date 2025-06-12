@@ -1,11 +1,16 @@
 import io
+import logging
 import random
+from collections import Counter
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont
 from moviepy import ImageSequenceClip
 
+from utils.game_race_utils import GameState
 from utils.weather_generator import make_sun_glare_layer, get_clouds_layer, add_edge_fade_mask, make_rain_layer
+
+logger = logging.getLogger(__name__)
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
 cars_count = 24
@@ -162,7 +167,7 @@ def draw_race_track(players, lane_height=70, track_length=800,
     # Имена участников и машины
     for idx, player in enumerate(players):
         y_text = idx * lane_height + (lane_height - 40) // 2
-        draw.text((car_w + 25, y_text), text=player.title, font=regular_font, fill=(200, 200, 200))
+        draw.text((car_w + 25, y_text), text=f"{idx + 1}. {player.title}", font=regular_font, fill=(200, 200, 200))
 
     # Чекер-финиш – справа, две колонки квадратов
     blocks_vertical = (img_height + finish_block_size - 1) // finish_block_size
@@ -199,7 +204,7 @@ def draw_start_race_track(players, lane_height=70, track_length=800,
     return img
 
 
-def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=50, duration=100):
+def create_race_gif(game_state: GameState, players, chat_id: int, output_path='race.gif', frame_count=50, duration=100):
     """
     Создаёт GIF с "гонкой" машин по нарисованной трассе.
 
@@ -226,8 +231,8 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
     winners = list()
     frames = []
     seg_count = 3
-    type_segs = random.choices(population=range(3), k=seg_count)
-    print(type_segs)
+    type_segs = get_weather_for_segments(seg_count, game_state, players)
+    logger.info(f"Type segments: {type_segs}")
     sunny_segs = [idx for idx, t in enumerate(type_segs) if t == 2]
     sun_layer = make_sun_glare_layer((track.width, track.height), max_alpha=100)
     sun_layer = add_edge_fade_mask(sun_layer, sunny_segs, seg_count=seg_count)
@@ -298,6 +303,27 @@ def create_race_gif(players, chat_id: int, output_path='race.gif', frame_count=5
     return winners
 
 
+def get_weather_for_segments(seg_count, game_state: GameState, players):
+    result = []
+    # цикл от 1 до 2 включительно
+    for i in range(1, 3):
+        # получаем погоду на i сегменте и добавляем в результат
+        result.append(random.choices([0, 1, 2], weights=game_state.weather.get(str(i)), k=1)[0])
+
+    # Для последнего сегмента выберем подходящую погоду для наименее популярных колес(шин)
+    lst = [p.attributes.get("wheels", 0) for p in players]
+    # Считаем частоту каждого числа
+    counts = Counter(lst)
+    # Находим минимальную частоту
+    min_freq = min(counts.values())
+    # Собираем все числа с этой частотой
+    least_common = [num for num, freq in counts.items() if freq == min_freq]
+    # Выбираем случайно одно из них
+    result.append(random.choice(least_common))
+
+    return result
+
+
 def draw_car_with_shadow(car_image, frame, car_x, car_y):
     # Создаем тень
     shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
@@ -323,6 +349,17 @@ def get_frame_segment(frame, segment_index, seg_count):
 
 
 if __name__ == "__main__":
+
+    # Настройка логирования
+    logging.basicConfig(
+        filename="bot.log",
+        filemode="a",
+        encoding="utf-8",
+        level=logging.INFO,
+        format="%(asctime)s\t%(levelname)s\t%(name)s\t%(message)s",
+    )
+
+
     # Пример: 5 полос
     class Player:
         def __init__(self, title, wheels: int):
@@ -335,8 +372,12 @@ if __name__ == "__main__":
 
     players = [Player("Alice", 0), Player("Bob", 0), Player("Charlie", 0),
                Player("Dave", 1), Player("Eve", 1), Player("Frank", 1),
-               Player("Grace", 2), Player("Helen", 2), Player("Ivan", 2)]
-    winners = create_race_gif(players, 2)
+               Player("Grace", 0), Player("Helen", 2), Player("Ivan", 2)]
+    # game_state = generate_game_with_weather_forecast()
+    game_state = GameState({"1": [10, 0, 0], "2": [0, 10, 0]})
+    for p in players:
+        game_state.add_player(p)
+    winners = create_race_gif(game_state, players, 2)
     print(winners)
     # track = draw_start_race_track(players, bg_color=(120, 120, 120))
     # # rain = make_rain_layer(track)

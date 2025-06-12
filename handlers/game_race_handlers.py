@@ -17,6 +17,7 @@ from services.driver_service import DriverService
 from services.notification_sender import send_alarm
 from services.param_service import ParamService
 from utils.cars_generator import draw_start_race_track, create_race_gif
+from utils.game_race_utils import GameState, generate_game_with_weather_forecast
 
 PLACE_PERCENT = {1: 35, 2: 25, 3: 17, 4: 12, 5: 8}
 
@@ -27,20 +28,24 @@ FEE = 5
 router = Router()
 
 
-async def get_state(chat_id: int, session):
+async def get_state(chat_id: int, session) -> GameState | None:
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
-    return states.get(str(chat_id), None)
+    state_dict = states.get(str(chat_id), None)
+    if state_dict is None:
+        return None
+    state = GameState.from_dict(state_dict)
+    return state
 
 
-async def save_state(chat_id: int, game_state, session):
+async def save_state(chat_id: int, game_state: GameState, session):
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
-    states[str(chat_id)] = game_state
-    await ParamService(session).set_parameter('race_state', json.dumps(states))
+    states[str(chat_id)] = game_state.to_dict()
+    await ParamService(session).set_parameter('race_state', json.dumps(states, ensure_ascii=False))
 
 
-async def remove_state(chat_id: int, game_state, session):
+async def remove_state(chat_id: int, session):
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
     states[str(chat_id)] = None
@@ -57,14 +62,14 @@ async def game_race(message: Message, session: AsyncSession, driver: Driver, cur
 
     game_state = await get_state(message.chat.id, session)
     if game_state is None:
-        game_state = list()
+        game_state = generate_game_with_weather_forecast()
         await save_state(message.chat.id, game_state, session)
         await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
                                                f'{driver.title} Начинает игру "Гонки"')
     content, builder, players = await get_game_message(game_state, session)
     content += HashTag("#гонки")
     await message.answer_photo(show_caption_above_media=False,
-                               photo=await get_media(game_state, players),
+                               photo=await get_media(players),
                                reply_markup=builder.as_markup(),
                                **content.as_kwargs(text_key="caption", entities_key="caption_entities"))
 
@@ -79,11 +84,11 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
         await send_alarm(callback, "⚠️ Начните Новую игру!")
         return
 
-    if len(game_state) >= MAX_PLAYERS:
+    if len(game_state.player_ids) >= MAX_PLAYERS:
         await send_alarm(callback, "Состав заезда определен, начните заезд!")
         return
 
-    if driver.id in game_state:
+    if game_state.is_in_game(driver):
         await send_alarm(callback, "⚠️ Вы уже участник заезда!")
         return
 
@@ -96,13 +101,13 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
     await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -FEE,
                                            f"{driver.title} Будет участвовать в заезде и заплатил -{FEE} кармы")
 
-    game_state.append(driver.id)
+    game_state.add_player(driver)
     await save_state(callback.message.chat.id, game_state, session)
 
     content, builder, players = await get_game_message(game_state, session)
     content += HashTag("#гонки")
     await callback.message.answer_photo(show_caption_above_media=False,
-                                        photo=await get_media(game_state, players),
+                                        photo=await get_media(players),
                                         reply_markup=builder.as_markup(),
                                         **content.as_kwargs(text_key="caption", entities_key="caption_entities"))
     try:
@@ -123,7 +128,7 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
         await send_alarm(callback, "⚠️ Начните Новую игру!")
         return
 
-    if len(game_state) < MIN_PLAYERS:
+    if len(game_state.player_ids) < MIN_PLAYERS:
         await send_alarm(callback, "⚠️ Недостаточно гонщиков в заезде!")
         return
 
@@ -131,10 +136,10 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
                                            f'{driver.title} Начинает заезд в игре "Гонки"')
 
     content, _, players = await get_game_message(game_state, session)
-    winners = create_race_gif(players, chat_id=chat_id,
+    winners = create_race_gif(game_state, players, chat_id=chat_id,
                               output_path=f"race_{chat_id}.gif", frame_count=400, duration=2)
     medals = {1: "🥇", 2: "🥈", 3: "🥉", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟"}
-    count = len(game_state)
+    count = len(game_state.player_ids)
     total = FEE * count
     for idx, player_idx in enumerate(winners):
         place = idx + 1
@@ -154,7 +159,7 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
     content += HashTag("#гонки")
     await callback.message.answer_animation(animation=FSInputFile(f"race_{chat_id}.mp4"), supports_streaming=True)
     await callback.message.answer(**content.as_kwargs())
-    await remove_state(chat_id, game_state, session)
+    await remove_state(chat_id, session)
 
 
 @router.callback_query(MyCallback.filter(F.action == "check_wheels"),
@@ -167,19 +172,20 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
 
 @router.callback_query(MyCallback.filter(F.action == "set_wheels"),
                        flags={"check_driver": True})
-async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+async def set_wheels_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
     wheels = callback_data.spot_id
     driver.attributes["wheels"] = wheels
     text = "Дождевые шины (дают + к скорости во время дождя)" if wheels == 1 else "Слики (лучшие на сухой трассе)" if wheels == 2 else "Универсальные шины"
     await send_alarm(callback, f"🛞 {text} успешно установлены")
 
-async def get_media(game_state, players):
-    if len(game_state) < MIN_PLAYERS:
+
+async def get_media(players):
+    if len(players) < MIN_PLAYERS:
         file = get_random_filename("./pics/racing")
         if file:
             return FSInputFile(os.path.join("./pics/racing", file))
         return FSInputFile("./pics/racing.jpg")
-    track = draw_start_race_track(players, bg_color=(120, 120, 120), track_length=len(game_state) * 120)
+    track = draw_start_race_track(players, bg_color=(120, 120, 120), track_length=len(players) * 120)
     img_buffer = BytesIO()
     track.save(img_buffer, format="PNG")
     img_buffer.seek(0)
@@ -215,11 +221,11 @@ def get_random_filename(directory_path):
     return random_file
 
 
-async def get_game_message(game_state, session):
+async def get_game_message(game_state: GameState, session):
     content = Bold(f"🏁 Игра «Гонки» 🏎️🚙🚗🚌🛻🚜\n\n")
-    content += "Достаточно нажать 'участвовать в заезде'.\n"
+    content += "Достаточно нажать «участвовать в заезде» и выбрать шины по погоде.\n"
     content += "Гонка проходит автоматически.\n\n"
-    count = len(game_state)
+    count = len(game_state.player_ids)
     total = FEE * count
     content += as_key_value("Количество участников", count)
     content += '\n'
@@ -232,27 +238,62 @@ async def get_game_message(game_state, session):
         content += Text("\nПриз за последнее место:  ") + Code(f"{FEE} 💟")
         content += '\n\n'
     players = []
-    for idx, player_id in enumerate(game_state):
+    for idx, player_id in enumerate(game_state.player_ids):
         player = await DriverService(session).get_by_id(player_id)
         players.append(player)
         if count < MIN_PLAYERS:
             content += f"{idx + 1}. {player.title}\n"
     if count < MIN_PLAYERS:
         content += '\n'
-    builder = await get_keyboard_by_game_state(game_state)
+    content += Bold("Прогноз погоды на заезд:\n")
+    weather_forecast = game_state.weather
+
+    part1 = weather_forecast.get('1')
+    part2 = weather_forecast.get('2')
+    content += f"Участок 1:    {part1[2] * 10}% ☀️,  {part1[1] * 10}% 🌧️\n"
+    content += f"Участок 2:    {part2[2] * 10}% ☀️,  {part2[1] * 10}% 🌧️\n"
+    content += f"Участок 3: Погода будет такой, под которую выбрано меньше всего шин\n"
+    content += '\n'
+    builder = await get_race_keyboard(game_state)
     return content, builder, players
 
 
-async def get_keyboard_by_game_state(game_state):
+async def get_race_keyboard(game_state: GameState):
     builder = InlineKeyboardBuilder()
-    if len(game_state) < MAX_PLAYERS:
+    keyboard_sizes = []
+    players_count = len(game_state.player_ids)
+    if players_count < MAX_PLAYERS:
         add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder)
+        keyboard_sizes.append(1)
 
     add_button(f"ℹ️ Проверить колеса 🛞🛞🛞🛞", "check_wheels", 0, builder)
-    add_button(f"🛞 Поставить универсальные шины ☀️☁️🌧️", "set_wheels", 0, builder, spot_id=0)
-    add_button(f"🛞 Поставить дождевые шины 🌧️", "set_wheels", 0, builder, spot_id=1)
-    add_button(f"🛞 Поставить слики ☀️", "set_wheels", 0, builder, spot_id=2)
-    if len(game_state) >= MIN_PLAYERS:
+    keyboard_sizes.append(1)
+    add_button(f"🛞 для ☀️", "set_wheels", 0, builder, spot_id=2)
+    add_button(f"🛞 для ☁️", "set_wheels", 0, builder, spot_id=0)
+    add_button(f"🛞 для 🌧️", "set_wheels", 0, builder, spot_id=1)
+    keyboard_sizes.append(3)
+    # if players_count >= 30:
+    #     add_button("😇 Помочь сопернику", "race_help_opponent", 0, builder)
+    #     for i in range(1, players_count + 1):
+    #         add_button(f"😇 {i}", "race_help_opponent", 0, builder, spot_id=i)
+    #     add_button("😈 Сделать пакость", "race_joke_opponent", 0, builder)
+    #     for i in range(1, players_count + 1):
+    #         add_button(f"😈 {i}", "race_joke_opponent", 0, builder, spot_id=i)
+    #     if players_count > 6:
+    #         keyboard_sizes.append(1)
+    #         keyboard_sizes.append(int(players_count / 2))
+    #         keyboard_sizes.append(players_count - int(players_count / 2))
+    #         keyboard_sizes.append(1)
+    #         keyboard_sizes.append(int(players_count / 2))
+    #         keyboard_sizes.append(players_count - int(players_count / 2))
+    #     else:
+    #         keyboard_sizes.append(1)
+    #         keyboard_sizes.append(players_count)
+    #         keyboard_sizes.append(1)
+    #         keyboard_sizes.append(players_count)
+
+    if players_count >= MIN_PLAYERS:
         add_button("🏁 Начать гонку!", "start_race", 0, builder)
-    builder.adjust(1)
+        keyboard_sizes.append(1)
+    builder.adjust(*keyboard_sizes)
     return builder
