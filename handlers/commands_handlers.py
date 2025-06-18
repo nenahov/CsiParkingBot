@@ -259,6 +259,8 @@ async def other_commands(callback: CallbackQuery):
             Bold("Дополнительно:"),
             as_key_value(Text("✉️ ", Code("написать разработчику <СООБЩЕНИЕ>")),
                          "отправляет сообщение разработчику бота"),
+            as_key_value(Text("❌ ", Code("/XO"), " ⭕"),
+                         "поиграть в крестики-нолики (5 в ряд). В ЛС - игра с ботом, в общем чате - с другим игроком!"),
             as_key_value(Text("🫶 ", Code("Доберись до парковки"), " 🅿️"),
                          "поиграть в игру, где нужно найти путь до парковки и можно выиграть 💟"),
             as_key_value(Text("🏁 ", Code("Поиграть в тетрис"), " 🏎️"),
@@ -267,6 +269,7 @@ async def other_commands(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
                                      switch_inline_query_current_chat='Написать разработчику: "сюда впишите Ваше сообщение"'))
+    builder.add(InlineKeyboardButton(text="❌ Поиграть в крестики-нолики ⭕", switch_inline_query_current_chat='/XO'))
     if callback.message.chat.type == 'private':
         builder.add(InlineKeyboardButton(text="🫶 Доберись до парковки 🅿️ (-1 💟)", callback_data=f"game_parking"))
     builder.add(InlineKeyboardButton(text="🏁 Поиграть в тетрис 🏎️", switch_inline_query_current_chat='Тетрис'))
