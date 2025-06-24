@@ -256,11 +256,11 @@ def create_race_gif(game_state: GameState, players, chat_id: int, output_path='r
                 min_w = 0
                 max_w = 0
                 if seg == 0:
-                    min_w, max_w = (0.15, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.05, 0.2)
+                    min_w, max_w = (0.15, 0.4) if wheels == 0 else (0.0, 0.1) if wheels == 1 else (0.05, 0.2)
                 elif seg == 1:
-                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.2, 0.8) if wheels == 1 else (0.0, 0.05)
+                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.4, 0.8) if wheels == 1 else (0.0, 0.05)
                 elif seg == 2:
-                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.3, 0.6)
+                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.3, 0.7)
                 weather_factor[idx] = random.uniform(min_w, max_w)
                 speed_factors[idx] += part_after * random.uniform(0.0, 0.02)
                 base_speeds[idx] = (max_x + car_w) * (speed_factors[idx] + weather_factor[idx]) / frame_count
@@ -377,7 +377,7 @@ if __name__ == "__main__":
     game_state = GameState({"1": [10, 0, 0], "2": [0, 10, 0]})
     for p in players:
         game_state.add_player(p)
-    winners = create_race_gif(game_state, players, 2)
+    winners = create_race_gif(game_state, players, 3, frame_count=400, duration=2)
     print(winners)
     # track = draw_start_race_track(players, bg_color=(120, 120, 120))
     # # rain = make_rain_layer(track)
