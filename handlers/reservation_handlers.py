@@ -36,7 +36,7 @@ async def handle_day_selection(callback: CallbackQuery, callback_data: MyCallbac
     drivers_info = Bold("Свободно!") if not reservations else as_marked_section(
         Bold("Забронировано:"),
         *[as_key_value(f"{res.driver.description}",
-                       f"приедет в {res.driver.absent_until.strftime('%a %d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
+                       f"приедет{res.driver.absent_until.strftime(' в %a %d.%m.%Y') if res.driver.is_absent(current_day) else ''}")
           for res in reservations],
         marker="• ", )
 

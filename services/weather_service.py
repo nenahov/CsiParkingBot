@@ -18,13 +18,13 @@ params = {
 }
 weather_map = {
     "01": {"icon": "☀", "sun_alpha": 120},
-    "02": {"icon": "⛅️", "sun_alpha": 100, "num_clouds": 5},
-    "03": {"icon": "⛅️", "sun_alpha": 80, "num_clouds": 15},
-    "04": {"icon": "🌥️", "sun_alpha": 30, "num_clouds": 20},
-    "09": {"icon": "🌦️", "sun_alpha": 10, "rain_drop_count": 400, "num_clouds": 20},
-    "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 30},
-    "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 40},
-    "13": {"icon": "🌨️", "num_clouds": 30},
+    "02": {"icon": "⛅️", "sun_alpha": 110, "num_clouds": 3},
+    "03": {"icon": "⛅️", "sun_alpha": 100, "num_clouds": 7},
+    "04": {"icon": "🌥️", "sun_alpha": 80, "num_clouds": 10},
+    "09": {"icon": "🌦️", "sun_alpha": 70, "rain_drop_count": 400, "num_clouds": 15},
+    "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 20},
+    "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 30},
+    "13": {"icon": "🌨️", "num_clouds": 20},
     "50": {"icon": "🌫️", "num_clouds": 50}
 }
 
