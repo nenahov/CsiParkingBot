@@ -33,7 +33,7 @@ class QueueDAO:
         result = await self.session.execute(select(Queue).order_by(Queue.created))
         return result.scalars().all()
 
-    async def get_queue_by_driver(self, driver: Driver) -> Queue:
+    async def get_queue_by_driver(self, driver: Driver) -> Queue | None:
         result = await self.session.execute(select(Queue).where(Queue.driver_id.is_(driver.id)))
         return result.scalar_one_or_none()
 

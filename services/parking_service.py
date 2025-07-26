@@ -32,11 +32,11 @@ class ParkingService:
     async def leave_spot(self, driver: Driver):
         await self.dao.leave_spot(driver)
 
-    async def occupy_spot(self, driver, spot_id: int, without_demand=True):
+    async def occupy_spot(self, driver, spot_id: int, without_demand=False):
         await self.dao.occupy_spot(driver, spot_id, without_demand)
 
-    async def get_free_spots(self, day_of_week: int):
-        return await self.dao.get_free_spots(day_of_week)
+    async def get_free_spots(self, day_of_week: int, day: date):
+        return await self.dao.get_free_spots(day_of_week, day)
 
     async def get_spot_by_id(self, spot_id: int):
         return await self.dao.get_by_id(spot_id)

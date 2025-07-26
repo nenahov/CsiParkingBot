@@ -1,6 +1,10 @@
-from sqlalchemy import select, update, or_, exists, not_
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import date
 
+from sqlalchemy import select, update, or_, exists, not_, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from models.reservation import Reservation
 
@@ -16,12 +20,12 @@ class ParkingSpotDAO:
 
     async def get_all(self):
         result = await self.session.execute(
-            select(ParkingSpot).where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).order_by(ParkingSpot.id))
+            select(ParkingSpot).where(ParkingSpot.status.is_not(SpotStatus.HIDDEN)).order_by(ParkingSpot.id))
         return result.scalars().all()
 
     async def clear_statuses(self):
         await self.session.execute(update(ParkingSpot).
-                                   where(ParkingSpot.status.is_not(SpotStatus.HIDEN)).
+                                   where(ParkingSpot.status.is_not(SpotStatus.HIDDEN)).
                                    values(status=None,
                                           current_driver_id=None))
 
@@ -48,23 +52,27 @@ class ParkingSpotDAO:
         )
         return result.scalars().all()
 
-    async def get_free_spots(self, day_of_week: int):
+    async def get_free_spots(self, day_of_week: int, day: date):
         # получить места с пустым статусом или со статусом Free
         # и у которых нет резервирования в этот день недели
         result = await self.session.execute(
-            select(ParkingSpot).
-            where(
-                or_(
-                    ParkingSpot.status.is_(None),
-                    ParkingSpot.status.is_(SpotStatus.FREE)
-                ),
-                not_(exists(
-                    select(Reservation).
-                    where(
-                        Reservation.parking_spot_id.is_(ParkingSpot.id),
-                        Reservation.day_of_week.is_(day_of_week)
-                    )
-                ))
-            )
+            select(ParkingSpot)
+            .options(selectinload(ParkingSpot.drivers))
+            .where(or_(ParkingSpot.status.is_(SpotStatus.FREE),
+                       and_(
+                           ParkingSpot.status.is_(None),
+                           not_(exists(
+                               select(Reservation)
+                               .join(Driver)
+                               .where(and_(Reservation.day_of_week.is_(day_of_week),
+                                           Reservation.parking_spot_id.is_(ParkingSpot.id),
+                                           Driver.enabled == True,
+                                           or_(Driver.absent_until.is_(None), Driver.absent_until <= day)
+                                           )
+                                      )
+                           ))
+                       )
+                       )
+                   )
         )
         return result.scalars().all()

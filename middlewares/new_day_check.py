@@ -29,7 +29,7 @@ class NewDayCheckMiddleware(BaseMiddleware):
             param_service = ParamService(session)
             data["param_service"] = param_service
 
-        current_day = await check_current_day(data["session"], param_service)
+        current_day = await check_current_day(event.bot, data["session"], param_service)
         data["current_day"] = current_day
 
         return await handler(event, data)

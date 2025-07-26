@@ -1,7 +1,13 @@
-from PIL import Image, ImageDraw, ImageFont
+import random
+from datetime import date
+
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
+from services.weather_service import WeatherService
+from utils.cars_generator import get_car, draw_car_with_shadow, cars_count
+from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer
 
 # Цвета для разных статусов
 COLORS = {
@@ -9,60 +15,157 @@ COLORS = {
     'my_reserved': (255, 250, 0, 150),  # Желтый
     'reserved': (255, 20, 20, 97),  # Красный
 
-    str(SpotStatus.HIDEN): (0, 0, 0, 30),  # Светло-зеленый
+    str(SpotStatus.HIDDEN): (0, 0, 0, 30),  # Светло-зеленый
     str(SpotStatus.FREE): (100, 255, 100, 200),  # Светло-зеленый
-    str(SpotStatus.OCCUPIED): (255, 20, 20, 200),  # Красный
+    str(SpotStatus.OCCUPIED): (255, 20, 20, 20),  # Красный
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND): (255, 20, 20, 250),  # Красный
 
-    str(SpotStatus.HIDEN) + "_me": (0, 0, 0, 250),  # Светло-зеленый
+    str(SpotStatus.HIDDEN) + "_me": (0, 0, 0, 250),  # Светло-зеленый
     str(SpotStatus.FREE) + "_me": (100, 255, 100, 250),  # Светло-зеленый
-    str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 250),  # Желтый
+    str(SpotStatus.OCCUPIED) + "_me": (255, 250, 0, 25),  # Желтый
     str(SpotStatus.OCCUPIED_WITHOUT_DEMAND) + "_me": (255, 200, 20, 250),  # Красный
 
     'text': (0, 0, 0)  # Черный
 }
 
-dx = -28
-dy = -16
+garbage_truck_frames = [(-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0),
+                        (1030, 610, 45), (1020, 510, 10),
+                        (980, 480, 45), (840, 470, 90), (580, 470, 90), (200, 470, 90),
+                        (110, 450, 45), (117, 370, -3), (125, 180, -20),
+                        (265, 170, 268), (130, 175, 270), (145, 170, 270), (130, 170, 270), (135, 170, 270),
+                        (270, 180, 250), (475, 220, 270), (830, 218, 270), (980, 215, 240),
+                        (1030, 245, 184), (1042, 460, 180), (1042, 610, 200)]
 
+dx = 0
+dy = 0
+d_width = -1
+
+cars = Image.open("./pics/cars.png").convert("RGBA")
+parking_img = Image.open("./pics/parking_r.png")
+
+regular_font = ImageFont.load_default(60)
 try:
-    font = ImageFont.truetype("arial.ttf", 12)
-except:
-    font = ImageFont.load_default()
+    emoji_font = ImageFont.truetype("./pics/NotoColorEmoji.ttf", 109)
+except Exception as e:
+    emoji_font = ImageFont.load_default()
+    print("Ошибка загрузки шрифта NotoColorEmoji.ttf", e)
 
 
-def generate_parking_map(parking_spots, reservations_data, driver: Driver, use_spot_status: bool = True):
-    # img = Image.new('RGB', (800, 600), (255, 255, 255))
-    img = Image.open("./pics/parking.png")
-
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 8)
-    except:
-        font = ImageFont.load_default()
+async def generate_parking_map(parking_spots,
+                               reservations_data,
+                               driver: Driver,
+                               use_spot_status: bool = True,
+                               frame_index: int = None,
+                               day: date = None):
+    overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
+    temp, weather, desc = await WeatherService().get_weather_string(day)
+    # temp, weather, desc = await WeatherService().get_weather_test(day)
+    # солнце рисуем вначале, дождь и облака в конце
+    if weather.get("sun_alpha", 0) > 0:
+        sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
+        overlay = Image.alpha_composite(overlay, sun_layer)
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
         status = get_status(driver, reservations_data, spot, use_spot_status)
 
-        # Создаем паттерн с диагональными полосами
-        pattern = create_diagonal_pattern(spot.width, spot.height,
-                                          stripe_width=4,
-                                          color2=COLORS[status],
-                                          color1=(255, 255, 255, 0))
+        x = spot.x
+        y = spot.y
+        car_x = -1000
+        car_y = -1000
+        car_rotate = 0
+        if 1 <= spot.id <= 17:
+            x = 120 + int((spot.id - 1) * 51)
+            y = 520
+            car_x = x + 2
+            car_y = y + 14
+            car_rotate = 0
+        elif 18 <= spot.id <= 34:
+            x = 171 + int((spot.id - 18) * 51)
+            y = 371
+            car_x = x + 2
+            car_y = y + 3
+            car_rotate = 180
+        elif 35 <= spot.id <= 51:
+            x = 171 + int((spot.id - 35) * 51)
+            y = 270
+            car_x = x + 2
+            car_y = y + 14
+            car_rotate = 0
+        elif spot.id == 74:
+            x = 17
+            y = 220
+            car_x = x + 2
+            car_y = y + 2
+            car_rotate = -90
 
-        # Вставляем паттерн в прямоугольник
-        overlay.paste(pattern, (dx + spot.x, dy + spot.y))
+        if (use_spot_status
+                and spot.current_driver_id is not None
+                and spot.status is not None
+                and spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND)):
+            if spot.current_driver:
+                car_index = spot.current_driver.attributes.get("car_index", spot.current_driver_id % cars_count)
+            else:
+                car_index = spot.current_driver_id % cars_count
 
-        # Добавляем текст
-        # text = f"Место {spot.id}\n\n{reserved_by or 'Свободно'}"
-        # draw.text((dx + spot.x + 2, dy + spot.y + 5), text, font=font, fill=COLORS['text'])
+            car_image = get_car(car_index)
 
-    img = Image.alpha_composite(img, overlay)
+            scale = 0.8
+            if scale != 1:
+                new_size = (int(car_image.width * scale), int(car_image.height * scale))
+                car_image = car_image.resize(new_size)
+            car_image = car_image.rotate(car_rotate, expand=True)
+            draw_car_with_shadow(car_image, overlay, dx + car_x, dy + car_y)
+        else:
+            # Создаем паттерн с диагональными полосами
+            pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
+                                              stripe_width=4,
+                                              color2=COLORS[status],
+                                              color1=(0, 0, 0, 0))
+            # Вставляем паттерн в прямоугольник
+            overlay.paste(pattern, (dx + x, dy + y), pattern)
 
-    return img
+    if frame_index:
+        # Рисуем мусорку
+        garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
+        scale = 0.8
+        if scale != 1:
+            new_size = (int(garbage_truck.width * scale), int(garbage_truck.height * scale))
+            garbage_truck = garbage_truck.resize(new_size)
+        frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
+        garbage_truck = garbage_truck.rotate(frame[2], expand=True)
+        pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
+        # Создаем тень
+        shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
+        shadow.putalpha(garbage_truck.split()[3])
+        shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
+        shadow.putalpha(garbage_truck.split()[3])
+        blur_radius = 10  # радиус размытия тени
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+
+        # Смещаем тень относительно машины
+        shadow_position = (pos[0] + 8, pos[1] + 8)
+
+        # Накладываем тень
+        overlay.paste(shadow, shadow_position, mask=garbage_truck)
+        overlay.paste(garbage_truck, pos, mask=garbage_truck)
+
+    # Рисуем дождь и облака
+    if weather.get("rain_drop_count", 0) > 0:
+        overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
+
+    if weather.get("num_clouds", 0) > 0:
+        cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
+        overlay = Image.alpha_composite(overlay, cloud_layer)
+
+    # Добавляем текст
+    draw = ImageDraw.Draw(overlay)
+    draw.text((17, 80), text=temp, font=regular_font, fill=COLORS['text'])
+    draw.text((140, 57), text=weather.get("icon", ''), font=emoji_font, embedded_color=True)
+
+    result = Image.alpha_composite(parking_img, overlay)
+
+    return result
 
 
 def get_status(driver: Driver, reservations_data, spot: ParkingSpot, use_spot_status: bool):
@@ -94,3 +197,14 @@ def create_diagonal_pattern(width, height, stripe_width=10, color1="red", color2
 
     # Обрезаем до нужного размера
     return pattern.crop((width / 2, height / 2, width + width / 2, height + height / 2))
+
+
+def extract_sprite(sprite_sheet, sprite_rect):
+    """
+    Извлекает спрайт из спрайт-листа.
+
+    :param sprite_sheet: Изображение со спрайт-листом (PIL Image)
+    :param sprite_rect: Кортеж (left, top, right, bottom), задающий область спрайта
+    :return: Извлечённое изображение спрайта
+    """
+    return sprite_sheet.crop(sprite_rect)

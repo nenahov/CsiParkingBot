@@ -1,4 +1,5 @@
 import asyncio
+import locale
 import logging
 import os
 
@@ -7,20 +8,25 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config.database import create_database, db_pool
 from handlers import main_handlers, reservation_handlers, map_handlers, user_handlers, queue_handlers, admin_handlers, \
-    game_handlers, commands_handlers
+    game_tetris_handlers, commands_handlers, settings_handlers, game_parking_handlers, game_race_handlers, \
+    achievements_handlers, shop_handlers, game_tic_tac_toe
 from middlewares.admin_check import AdminCheckMiddleware
 from middlewares.db import DbSessionMiddleware
 from middlewares.driver_check import DriverCheckMiddleware
+from middlewares.lock_operation import LockOperationMiddleware
 from middlewares.logging_middleware import LoggingMiddleware
 from middlewares.long_operation import LongOperationMiddleware
 from middlewares.my_callback_check import MyCallbackCheckMiddleware
 from middlewares.new_day_check import NewDayCheckMiddleware
 from services.param_service import ParamService
 from services.queue_service import QueueService
-from utils.new_day_checker import check_current_day
+from utils.new_day_checker import check_current_day, check_auto_karma_for_absent
 
 
 async def main():
+    # Устанавливаем локаль для русского языка
+    locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
+
     bot = Bot(token=os.getenv("BOT_TOKEN"))
     # Запускаем бота и пропускаем все накопленные входящие
     # Да, этот метод можно вызвать даже если у вас поллинг
@@ -44,21 +50,36 @@ async def main():
     dp.message.middleware(NewDayCheckMiddleware())
     dp.message.middleware(DriverCheckMiddleware())
     dp.message.middleware(AdminCheckMiddleware())
+    dp.message.middleware(LockOperationMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
     dp.callback_query.middleware(MyCallbackCheckMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
     dp.callback_query.middleware(NewDayCheckMiddleware())
     dp.callback_query.middleware(DriverCheckMiddleware())
     dp.callback_query.middleware(AdminCheckMiddleware())
+    dp.callback_query.middleware(LongOperationMiddleware())
+    dp.callback_query.middleware(LockOperationMiddleware())
 
-    dp.include_router(queue_handlers.router)
     dp.include_router(user_handlers.router)
     dp.include_router(map_handlers.router)
     dp.include_router(reservation_handlers.router)
+    dp.include_router(queue_handlers.router)
     dp.include_router(admin_handlers.router)
     dp.include_router(main_handlers.router)
     dp.include_router(commands_handlers.router)
-    dp.include_router(game_handlers.router)
+
+    dp.include_router(game_parking_handlers.router)
+    dp.include_router(game_tic_tac_toe.router)
+    dp.include_router(game_race_handlers.router)
+    dp.include_router(game_tetris_handlers.router)
+
+    dp.include_router(settings_handlers.router)
+    dp.include_router(achievements_handlers.router)
+    dp.include_router(shop_handlers.router)
+
+    # dp.workflow_data.update(
+    #     audit_service=audit_service
+    # )
 
     await dp.start_polling(bot)
 
@@ -66,7 +87,9 @@ async def main():
 async def send_message_to_queue(bot: Bot):
     async with db_pool() as session:
         try:
-            current_day = await check_current_day(session, ParamService(session))
+            param_service = ParamService(session)
+            current_day = await check_current_day(bot, session, param_service)
+            await check_auto_karma_for_absent(bot, session, param_service, current_day)
             await QueueService(session).check_free_spots(bot, current_day)
             await session.commit()
         except Exception as e:

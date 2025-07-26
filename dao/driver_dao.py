@@ -1,9 +1,11 @@
+from datetime import date
 from typing import Optional, Sequence
 
-from sqlalchemy import select, update, delete, func, cast, Integer
+from sqlalchemy import select, update, delete, func, cast, Integer, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.driver import Driver
+from models.parking_spot import ParkingSpot
 
 
 class DriverDAO:
@@ -40,6 +42,26 @@ class DriverDAO:
         result = await self.session.execute(select(Driver))
         return result.scalars().all()
 
+    async def get_inactive_drivers(self) -> Sequence[Driver]:
+        """Получение всех неактивных водителей"""
+        result = await self.session.execute(select(Driver).where(Driver.enabled.is_(False)))
+        return result.scalars().all()
+
+    async def find_by_text(self, text: str) -> Sequence[Driver]:
+        """
+        Возвращает всех водителей, у которых text встречается
+        в username или description (регистронезависимо).
+        """
+        pattern = f"%{text}%"
+        result = await self.session.execute(select(Driver).filter(
+            or_(
+                Driver.username.ilike(pattern),
+                Driver.description.ilike(pattern)
+            )
+        ))
+        return result.scalars().all()
+
+
     async def delete(self, driver_id: int) -> None:
         """Удаление водителя"""
         await self.session.execute(
@@ -73,3 +95,55 @@ class DriverDAO:
             .order_by(cast(func.json_extract(Driver.attributes, '$.karma'), Integer).desc())
             .limit(limit))
         return result.scalars().all()
+
+    async def get_absent_drivers_for_auto_karma(self, is_working_day: bool) -> Sequence[Driver]:
+        # Выбираем водителей, которые отсутствуют на текущую дату (или сегодня выходной)
+        target_date = date.today()
+        # И у которых в атрибуте есть значение "plus" >= 0
+        sql = (select(Driver)
+               .filter(Driver.enabled.is_(True))
+               .filter(func.json_extract(Driver.attributes, '$.plus').isnot(None))
+               .filter(func.json_extract(Driver.attributes, '$.plus') >= 0))
+        if is_working_day:
+            sql = (sql
+                   .filter(Driver.absent_until.is_not(None))
+                   .filter(Driver.absent_until > target_date))
+        result = await self.session.execute(sql)
+        return result.scalars().all()
+
+    async def get_active_partner_drivers(self, driver_id: int, target_date: date) -> set[Driver]:
+        """
+        Возвращает список водителей, имеющих общие парковочные места с заданным водителем,
+        исключая самого водителя.
+        """
+        # 1. Определяем все id парковочных мест, с которыми связан данный водитель
+        stmt = (
+            select(ParkingSpot.id)
+            .join(ParkingSpot.drivers)
+            .where(Driver.id.is_(driver_id))
+        )
+        result = await self.session.execute(stmt)
+        parking_spot_ids = [row[0] for row in result.all()]
+
+        if not parking_spot_ids:
+            return set()  # Если у водителя нет парковочных мест, возвращаем пустой список
+
+        # 2. Находим всех водителей, которые связаны с указанными парковочными местами,
+        # исключая исходного водителя
+        stmt = (
+            select(Driver)
+            .join(Driver.parking_spots)
+            .where(and_(ParkingSpot.id.in_(parking_spot_ids),
+                        Driver.id != driver_id,
+                        Driver.enabled.is_(True),
+                        or_(
+                            Driver.absent_until.is_(None),
+                            Driver.absent_until <= target_date
+                        ))
+                   )
+            .distinct()  # Чтобы избежать дублей, если водитель встречается в нескольких парковках
+        )
+        result = await self.session.execute(stmt)
+        partner_drivers = result.scalars().all()
+
+        return set(partner_drivers)
