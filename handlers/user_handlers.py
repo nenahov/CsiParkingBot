@@ -56,9 +56,6 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
 
     builder = InlineKeyboardBuilder()
     keyboard_sizes = []
-    if driver.attributes.get("plus", -1) > -1:
-        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
-        keyboard_sizes.append(1)
     if is_absent:
         add_button("🏎️ Вернулся раньше...", "comeback", driver.chat_id, builder)
         keyboard_sizes.append(1)
@@ -78,6 +75,10 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
         if in_queue:
             add_button(f"✋ Покинуть очередь{on_ts}", "leave-queue", driver.chat_id, builder)
             keyboard_sizes.append(1)
+
+    if driver.attributes.get("plus", -1) > -1:
+        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
+        keyboard_sizes.append(1)
 
     if is_private:
         add_button("⚙️ Настройки...", "settings", driver.chat_id, builder)
@@ -398,20 +399,34 @@ async def occupy_spot(callback, callback_data, current_day, driver, is_private, 
 async def plus_karma_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     if driver.attributes.get("plus", -1) < 0:
         await callback.answer("❎ Вы не можете получить больше кармы.\n\nМожет завтра повезет.", show_alert=True)
-    else:
-        driver.attributes["plus"] = -1
-        if not is_private:
-            await callback.bot.send_message(chat_id=driver.chat_id, text="Розыгрыш кармы! /status")
-        data = await callback.bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
-        await session.commit()
         await show_status_callback(callback, session, driver, current_day, is_private)
-        await asyncio.sleep(5 if is_private else 13)
-        driver.attributes["karma"] = driver.get_karma() + data.dice.value
-        await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
-                                               f"Розыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
-        await session.commit()
-        await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
-                              show_alert=True)
+        return
+
+    # Если водитель не в отпуске и не в очереди, то должен сначала приехать или уехать, чтобы получить карму
+    param_service = ParamService(session)
+    is_working_day = ((await param_service.get_parameter("current_day_is_working_day", ""))
+                      .lower() in ("yes", "true", "t", "1"))
+    is_absent = driver.is_absent(current_day)
+    await session.refresh(driver, ["current_spots"])
+    occupied_spots = driver.get_occupied_spots()
+    in_queue = await QueueService(session).is_driver_in_queue(driver)
+    if is_working_day and not is_absent and not occupied_spots and not in_queue:
+        await callback.answer("⁉️ Чтобы получить карму, укажите приедете ли вы или нет.", show_alert=True)
+        return
+
+    driver.attributes["plus"] = -1
+    if not is_private:
+        await callback.bot.send_message(chat_id=driver.chat_id, text="Розыгрыш кармы! /status")
+    data = await callback.bot.send_dice(chat_id=driver.chat_id, emoji=random.choice(['🎲', '🎯', '🏀', '⚽', '🎳']))
+    await session.commit()
+    await show_status_callback(callback, session, driver, current_day, is_private)
+    await asyncio.sleep(5 if is_private else 13)
+    driver.attributes["karma"] = driver.get_karma() + data.dice.value
+    await AuditService(session).log_action(driver.id, UserActionType.DRAW_KARMA, current_day, data.dice.value,
+                                           f"Розыгрыш кармы для {driver.description}: +{data.dice.value}; стало {driver.attributes["karma"]}")
+    await session.commit()
+    await callback.answer(f"💟 Вы получили +{data.dice.value} в карму.\n\nЗавтра будет шанс получить еще.",
+                          show_alert=True)
 
     await show_status_callback(callback, session, driver, current_day, is_private)
 

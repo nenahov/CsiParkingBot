@@ -26,7 +26,7 @@ async def show_achievements(event, session, driver: Driver, current_day):
                    f"{driver.description}", '\n\n')
     content += Bold("🏆 Мои достижения:")
     content += '\n\n'
-    content += get_achievement_row("Магнат 💟", driver.get_karma(), 50, 100, 200)
+    content += get_achievement_row("Магнат 💟", driver.get_karma(), 100, 500, 5000)
     content += '\n'
 
     actions = await AuditService(session).get_actions_by_period(driver.id, PERIOD_IN_DAYS, current_day)

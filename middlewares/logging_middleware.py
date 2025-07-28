@@ -21,7 +21,8 @@ class LoggingMiddleware:
             user = event.from_user
             logger.info(f"Message [ID:{event.message_id}] from {user.full_name} [ID:{user.id}]: {event.text}")
         elif isinstance(event, types.CallbackQuery):
-            logger.info(f"Callback [ID:{event.id}] from {event.from_user.full_name}: {event.data}")
+            user = event.from_user
+            logger.info(f"Callback [ID:{event.id}] from {user.full_name} [ID:{user.id}]: {event.data}")
         elif isinstance(event, types.Poll):
             logger.info(f"Poll: {event.question}")
         elif isinstance(event, types.ChatMemberUpdated):
