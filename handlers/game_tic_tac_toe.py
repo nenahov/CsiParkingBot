@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 from aiogram import F, Router
 from aiogram import types
-from aiogram.filters import Command
+from aiogram.filters import Command, or_f
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.formatting import Bold, Text, TextLink
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -197,7 +197,7 @@ def build_board(field: list[list[int]], state_str: str, turn: int, p1: int, p2: 
 
 
 # --- Handlers ----------------------------------------------------------------
-@router.message(Command("XO"), flags={"check_driver": True})
+@router.message(or_f(Command("XO"), F.text.regexp(r"(?i)(.*/xo)")), flags={"check_driver": True})
 async def cmd_start(message: types.Message):
     # Ожидаем команду: /XO xXoO
     split = message.text.split()
