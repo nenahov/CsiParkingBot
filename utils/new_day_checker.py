@@ -60,7 +60,7 @@ async def check_current_day(bot, session, param_service):
     weather = await WeatherService().get_weather_content(current_day)
     holidays = await HolidayService().get_holidays(current_day)
     if holidays:
-        weather += Bold(f"\n\nПраздники на {current_day.strftime('%a %d.%m.%Y')}:")
+        weather += Bold(f"\n\nПраздники {current_day.strftime('%a %d.%m.%Y')}:")
         weather += "\n"
         weather += "\n".join(("  - " + h for h in holidays))
 
