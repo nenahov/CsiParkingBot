@@ -3,6 +3,8 @@ import logging
 import random
 from datetime import datetime, timedelta
 
+from aiogram.utils.formatting import Bold
+
 from config import constants
 from handlers.user_handlers import get_status_message
 from models.user_audit import UserActionType
@@ -56,6 +58,11 @@ async def check_current_day(bot, session, param_service):
     await session.commit()
 
     weather = await WeatherService().get_weather_content(current_day)
+    holidays = await HolidayService().get_holidays(current_day)
+    if holidays:
+        weather += Bold(f"\n\nПраздники на {current_day.strftime('%a %d.%m.%Y')}:")
+        weather += "\n"
+        weather += "\n".join(("  - " + h for h in holidays))
 
     # уведомляем всех водителей
     notification_sender = NotificationSender(bot)
