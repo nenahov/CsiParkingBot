@@ -147,12 +147,20 @@ async def get_spot_info(spot, reservations, session):
 
 
 @router.message(
-    F.text.regexp(r"(?i).*((уехал.*на|меня не будет|буду отсутствовать) (\d+) (день|дня|дней))").as_("match"),
+    F.text.regexp(r"(?i).*((уехал.*на|меня не будет|буду отсутствовать).* (\d+) .*(день|дня|дней))").as_("match"),
     flags={"check_driver": True})
 async def absent(message: Message, session: AsyncSession, driver: Driver, current_day, is_private, match: re.Match):
     days = int(match.group(3))  # Извлекаем количество дней
     await absent_x_days(days, driver, message, session, current_day, is_private)
 
+
+@router.message(
+    F.text.regexp(r"(?i).*меня не будет дней.* (\d+)").as_("match"),
+    flags={"check_driver": True})
+async def absent_week(message: Message, session: AsyncSession, driver: Driver, current_day, is_private,
+                      match: re.Match):
+    days = int(match.group(1))  # Извлекаем количество дней
+    await absent_x_days(days, driver, message, session, current_day, is_private)
 
 @router.message(
     or_f(Command("free"), F.text.regexp(r"(?i).*((не приеду сегодня)|(уже уехал))")), flags={"check_driver": True})
@@ -188,8 +196,8 @@ async def absent_handler(event, session, driver, current_day, is_private):
     builder = InlineKeyboardBuilder()
     add_button("🫶 На сутки", "absent-confirm", driver.chat_id, builder, day_num=1)
     add_button("❤️‍🔥 До конца недели", "absent-confirm", driver.chat_id, builder, day_num=7 - current_week_day)
-    builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать N дней",
-                                     switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
+    builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать несколько дней",
+                                     switch_inline_query_current_chat='Меня не будет дней 7'))
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
     await send_reply(event, content, builder)
