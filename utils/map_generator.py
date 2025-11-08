@@ -58,8 +58,8 @@ async def generate_parking_map(parking_spots,
                                frame_index: int = None,
                                day: date = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
-    # temp, weather, desc = await WeatherService().get_weather_string(day)
-    temp, weather, desc = await WeatherService().get_weather_test(day)
+    temp, weather, desc = await WeatherService().get_weather_string(day)
+    # temp, weather, desc = await WeatherService().get_weather_test(day)
     # солнце рисуем вначале, дождь и облака в конце
     if weather.get("sun_alpha", 0) > 0:
         sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
@@ -152,15 +152,13 @@ async def generate_parking_map(parking_spots,
 
     # Рисуем дождь/снег и облака
     if weather.get("rain_drop_count", 0) > 0:
-        overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
+        if "-" in temp:
+            overlay = add_snow(overlay, snow_count=weather.get("rain_drop_count", 0) // 2, snow_size_range=(2, 3))
+        else:
+            overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
 
-    if weather.get("add_snow", 0) > 0:
-        overlay = add_snow(overlay)
-
-    if "-" in temp:
-        # overlay = add_ice_on_ground(overlay)
-        # overlay = add_snow_to_image2(overlay)
-        pass
+    if weather.get("snow_count", 0) > 0:
+        overlay = add_snow(overlay, snow_count=weather.get("snow_count", 0))
 
     if weather.get("num_clouds", 0) > 0:
         cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
