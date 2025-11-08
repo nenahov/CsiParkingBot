@@ -24,7 +24,7 @@ weather_map = {
     "09": {"icon": "🌦️", "sun_alpha": 70, "rain_drop_count": 400, "num_clouds": 15},
     "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 20},
     "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 30},
-    "13": {"icon": "🌨️", "num_clouds": 20},
+    "13": {"icon": "🌨️", "num_clouds": 5, "add_snow": 1},
     "50": {"icon": "🌫️", "num_clouds": 50}
 }
 
@@ -34,7 +34,7 @@ class WeatherService:
         pass
 
     async def get_weather_test(self, day: date) -> (str, dict, str):
-        return "+25°", {"icon": "☀", "sun_alpha": 120}, "тест"
+        return "-25°", {"icon": "🌨️", "num_clouds": 5, "add_snow": 1}, "тест"
 
     async def get_weather_string(self, day: date) -> (str, dict, str):
         try:

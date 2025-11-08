@@ -1,6 +1,8 @@
 import random
+from typing import Union
 
-from PIL import Image, ImageDraw, ImageFilter, ImageChops
+from PIL import Image, ImageChops
+from PIL import ImageDraw, ImageFilter
 
 
 def make_sun_glare_layer(size, center=None, max_alpha=120, radius=None):
@@ -176,3 +178,40 @@ def get_clouds_layer(
 
     # Save the resulting image
     return cloud_layer
+
+
+def add_snow(
+        img: Union[str, Image.Image],
+        snow_count: int = 500,
+        snow_size_range: tuple = (2, 5),
+        snow_opacity_range: tuple = (120, 220),
+        snow_blur: float = 1.5,
+        seed: int = None
+) -> Image.Image:
+    """Накладывает снежинки поверх изображения."""
+    if seed is not None:
+        random.seed(seed)
+
+    if isinstance(img, str):
+        base = Image.open(img).convert("RGBA")
+    else:
+        base = img.convert("RGBA")
+
+    w, h = base.size
+
+    snow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(snow_layer)
+
+    for _ in range(snow_count):
+        x = random.uniform(0, w)
+        y = random.uniform(0, h)
+        size = random.uniform(*snow_size_range)
+        alpha = int(random.uniform(*snow_opacity_range))
+        rx = size * random.uniform(0.8, 1.3)
+        ry = size * random.uniform(0.8, 1.3)
+        draw.ellipse((x - rx, y - ry, x + rx, y + ry), fill=(255, 255, 255, alpha))
+
+    if snow_blur > 0:
+        snow_layer = snow_layer.filter(ImageFilter.GaussianBlur(radius=snow_blur))
+
+    return Image.alpha_composite(base, snow_layer)

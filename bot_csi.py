@@ -30,7 +30,7 @@ async def main():
     bot = Bot(token=os.getenv("BOT_TOKEN"))
     # Запускаем бота и пропускаем все накопленные входящие
     # Да, этот метод можно вызвать даже если у вас поллинг
-    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=False)
 
     dp = Dispatcher()
 

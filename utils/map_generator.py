@@ -7,7 +7,7 @@ from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
 from utils.cars_generator import get_car, draw_car_with_shadow, cars_count
-from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer
+from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer, add_snow
 
 # Цвета для разных статусов
 COLORS = {
@@ -58,8 +58,8 @@ async def generate_parking_map(parking_spots,
                                frame_index: int = None,
                                day: date = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
-    temp, weather, desc = await WeatherService().get_weather_string(day)
-    # temp, weather, desc = await WeatherService().get_weather_test(day)
+    # temp, weather, desc = await WeatherService().get_weather_string(day)
+    temp, weather, desc = await WeatherService().get_weather_test(day)
     # солнце рисуем вначале, дождь и облака в конце
     if weather.get("sun_alpha", 0) > 0:
         sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
@@ -150,9 +150,17 @@ async def generate_parking_map(parking_spots,
         overlay.paste(shadow, shadow_position, mask=garbage_truck)
         overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
-    # Рисуем дождь и облака
+    # Рисуем дождь/снег и облака
     if weather.get("rain_drop_count", 0) > 0:
         overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
+
+    if weather.get("add_snow", 0) > 0:
+        overlay = add_snow(overlay)
+
+    if "-" in temp:
+        # overlay = add_ice_on_ground(overlay)
+        # overlay = add_snow_to_image2(overlay)
+        pass
 
     if weather.get("num_clouds", 0) > 0:
         cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
