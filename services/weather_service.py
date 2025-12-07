@@ -34,7 +34,7 @@ class WeatherService:
         pass
 
     async def get_weather_test(self, day: date) -> (str, dict, str):
-        return "-25°", {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 20}, "тест"
+        return "-25°", {"icon": "🌨️", "rain_drop_count": 600, "num_clouds": 20, "snow_count": 500}, "тест"
 
     async def get_weather_string(self, day: date) -> (str, dict, str):
         try:

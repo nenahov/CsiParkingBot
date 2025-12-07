@@ -1,3 +1,4 @@
+import asyncio
 import random
 from datetime import date
 
@@ -36,11 +37,21 @@ garbage_truck_frames = [(-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0),
                         (270, 180, 250), (475, 220, 270), (830, 218, 270), (980, 215, 240),
                         (1030, 245, 184), (1042, 460, 180), (1042, 610, 200)]
 
+SNOWMAN_BOXES = [
+    (20, 30, 128, 163),
+    (133, 30, 233, 163),
+    (236, 30, 346, 163),
+    (15, 180, 117, 328),
+    (129, 180, 241, 327),
+    (241, 180, 337, 325),
+]
+
 dx = 0
 dy = 0
 d_width = -1
 
 cars = Image.open("./pics/cars.png").convert("RGBA")
+snowman_img = Image.open("./pics/snowman.png").convert("RGBA")
 parking_img = Image.open("./pics/parking_r.png")
 
 regular_font = ImageFont.load_default(60)
@@ -56,10 +67,13 @@ async def generate_parking_map(parking_spots,
                                driver: Driver,
                                use_spot_status: bool = True,
                                frame_index: int = None,
-                               day: date = None):
+                               day: date = None,
+                               is_test: bool = False):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
-    temp, weather, desc = await WeatherService().get_weather_string(day)
-    # temp, weather, desc = await WeatherService().get_weather_test(day)
+    if not is_test:
+        temp, weather, desc = await WeatherService().get_weather_string(day)
+    else:
+        temp, weather, desc = await WeatherService().get_weather_test(day)
     # солнце рисуем вначале, дождь и облака в конце
     if weather.get("sun_alpha", 0) > 0:
         sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
@@ -126,29 +140,7 @@ async def generate_parking_map(parking_spots,
             overlay.paste(pattern, (dx + x, dy + y), pattern)
 
     if frame_index:
-        # Рисуем мусорку
-        garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
-        scale = 0.8
-        if scale != 1:
-            new_size = (int(garbage_truck.width * scale), int(garbage_truck.height * scale))
-            garbage_truck = garbage_truck.resize(new_size)
-        frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
-        garbage_truck = garbage_truck.rotate(frame[2], expand=True)
-        pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
-        # Создаем тень
-        shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
-        shadow.putalpha(garbage_truck.split()[3])
-        shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
-        shadow.putalpha(garbage_truck.split()[3])
-        blur_radius = 10  # радиус размытия тени
-        shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
-
-        # Смещаем тень относительно машины
-        shadow_position = (pos[0] + 8, pos[1] + 8)
-
-        # Накладываем тень
-        overlay.paste(shadow, shadow_position, mask=garbage_truck)
-        overlay.paste(garbage_truck, pos, mask=garbage_truck)
+        await add_garbage_truck(frame_index, overlay)
 
     # Рисуем дождь/снег и облака
     if weather.get("rain_drop_count", 0) > 0:
@@ -158,6 +150,7 @@ async def generate_parking_map(parking_spots,
             overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
 
     if weather.get("snow_count", 0) > 0:
+        overlay = await add_snowman(overlay)
         overlay = add_snow(overlay, snow_count=weather.get("snow_count", 0))
 
     if weather.get("num_clouds", 0) > 0:
@@ -172,6 +165,54 @@ async def generate_parking_map(parking_spots,
     result = Image.alpha_composite(parking_img, overlay)
 
     return result
+
+
+async def add_snowman(overlay):
+    # Рисуем снеговика
+    index = random.randint(0, 5)
+    box = SNOWMAN_BOXES[index]
+    snowman = snowman_img.crop(box)
+    scale = 0.8
+    if scale != 1:
+        new_size = (int(snowman.width * scale), int(snowman.height * scale))
+        snowman = snowman.resize(new_size)
+
+    snow_w, snow_h = snowman.size
+
+    target_center_x = 380
+    target_bottom_y = 118
+
+    paste_x = int(target_center_x - snow_w / 2)
+    paste_y = int(target_bottom_y - snow_h)
+
+    # Вставляем с учётом альфа‑канала (третий аргумент — маска)
+    overlay.paste(snowman, (paste_x, paste_y), snowman)
+
+    return overlay
+
+
+async def add_garbage_truck(frame_index, overlay):
+    # Рисуем мусорку
+    garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
+    scale = 0.8
+    if scale != 1:
+        new_size = (int(garbage_truck.width * scale), int(garbage_truck.height * scale))
+        garbage_truck = garbage_truck.resize(new_size)
+    frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
+    garbage_truck = garbage_truck.rotate(frame[2], expand=True)
+    pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
+    # Создаем тень
+    shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
+    shadow.putalpha(garbage_truck.split()[3])
+    shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
+    shadow.putalpha(garbage_truck.split()[3])
+    blur_radius = 10  # радиус размытия тени
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+    # Смещаем тень относительно машины
+    shadow_position = (pos[0] + 8, pos[1] + 8)
+    # Накладываем тень
+    overlay.paste(shadow, shadow_position, mask=garbage_truck)
+    overlay.paste(garbage_truck, pos, mask=garbage_truck)
 
 
 def get_status(driver: Driver, reservations_data, spot: ParkingSpot, use_spot_status: bool):
@@ -214,3 +255,12 @@ def extract_sprite(sprite_sheet, sprite_rect):
     :return: Извлечённое изображение спрайта
     """
     return sprite_sheet.crop(sprite_rect)
+
+
+async def main() -> None:
+    img = await generate_parking_map([], None, None, frame_index=12, is_test=True)
+    img.save("c:\\\\Temp\\temp.png")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
