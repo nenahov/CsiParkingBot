@@ -98,10 +98,10 @@ class QueueService:
             q.spot_id = spot.id
             # к текущему времени добавляем 10 минут, но если получившиеся время от 19:00 до 09:00 следующего дня, то ставим 09:00 следующего дня
             choose_before = datetime.now() + timedelta(minutes=10)
-            if choose_before.hour >= constants.new_day_begin_hour:
-                choose_before = datetime.combine(now.date() + timedelta(days=1), time(9, 0))
+            if choose_before.hour >= 19:
+                choose_before = datetime.combine(choose_before.date() + timedelta(days=1), time(9, 0))
             elif choose_before.hour < 8 or (choose_before.hour == 8 and choose_before.minute < (60 - 10)):
-                choose_before = datetime.combine(now.date(), time(9, 0))
+                choose_before = datetime.combine(choose_before.date(), time(9, 0))
             q.choose_before = choose_before
 
             builder = InlineKeyboardBuilder()
