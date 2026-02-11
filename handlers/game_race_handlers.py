@@ -53,7 +53,7 @@ async def remove_state(chat_id: int, session):
 
 
 @router.message(
-    F.text.regexp(r"(?i).*да начнется гонка"),
+    F.text.regexp(r"(?i).*((да начнется гонка)|(инфо гонка))"),
     flags={"lock_operation": "race", "long_operation": "upload_photo", "check_admin": True, "check_driver": True})
 async def game_race(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
     if is_private:
@@ -263,14 +263,14 @@ async def get_race_keyboard(game_state: GameState):
     keyboard_sizes = []
     players_count = len(game_state.player_ids)
     if players_count < MAX_PLAYERS:
-        add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder)
+        add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder, style='primary')
         keyboard_sizes.append(1)
 
     add_button(f"ℹ️ Проверить колеса 🛞🛞🛞🛞", "check_wheels", 0, builder)
     keyboard_sizes.append(1)
-    add_button(f"🛞 для ☀️", "set_wheels", 0, builder, spot_id=2)
-    add_button(f"🛞 для ☁️", "set_wheels", 0, builder, spot_id=0)
-    add_button(f"🛞 для 🌧️", "set_wheels", 0, builder, spot_id=1)
+    add_button(f"🛞 для ☀️", "set_wheels", 0, builder, spot_id=2, style='success')
+    add_button(f"🛞 для ☁️", "set_wheels", 0, builder, spot_id=0, style='success')
+    add_button(f"🛞 для 🌧️", "set_wheels", 0, builder, spot_id=1, style='success')
     keyboard_sizes.append(3)
     # if players_count >= 30:
     #     add_button("😇 Помочь сопернику", "race_help_opponent", 0, builder)
@@ -293,7 +293,7 @@ async def get_race_keyboard(game_state: GameState):
     #         keyboard_sizes.append(players_count)
 
     if players_count >= MIN_PLAYERS:
-        add_button("🏁 Начать гонку!", "start_race", 0, builder)
+        add_button("🏁 Начать гонку!", "start_race", 0, builder, style='danger')
         keyboard_sizes.append(1)
     builder.adjust(*keyboard_sizes)
     return builder
