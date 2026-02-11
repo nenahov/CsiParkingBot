@@ -91,7 +91,7 @@ async def add_move_button(game_state, arrow, builder, driver, dx, dy):
     if game_state.is_wall(dx, dy):
         add_button("✖️", "pass", driver.chat_id, builder)
     else:
-        add_button(arrow, "p_move", driver.chat_id, builder, spot_id=dx, day_num=dy)
+        add_button(arrow, "p_move", driver.chat_id, builder, spot_id=dx, day_num=dy, style='success')
 
 
 @router.callback_query(MyCallback.filter(F.action == "beep"),
