@@ -91,7 +91,7 @@ async def edit_avatar(event: CallbackQuery, driver: Driver):
     photo = generate_carousel_image(current_index, cars_count_for_driver)
     await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                      photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
-                                     reply_markup=get_carousel_keyboard(current_index, driver.chat_id))
+                                     reply_markup=get_carousel_keyboard(current_index, driver.chat_id, 'success'))
     await event.answer()
 
 
@@ -120,23 +120,24 @@ async def carousel_callback(event: CallbackQuery, driver: Driver):
         return
     cars_count_for_driver = extra_cars_count if driver.attributes.get("extra_cars", 0) > 0 else cars_count
     new_index = (current_index + int(direction)) % cars_count_for_driver
-
+    current_index = driver.attributes.get("car_index", driver.id)
+    style = 'primary' if new_index != current_index else 'success'
     photo = generate_carousel_image(new_index, cars_count_for_driver)
     try:
         await event.message.edit_media(
             media=InputMediaPhoto(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                   media=BufferedInputFile(photo.getvalue(), filename="carousel.png")),
-            reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
+            reply_markup=get_carousel_keyboard(new_index, driver.chat_id, style))
     except Exception as e:
         # Если редактирование сообщения не удалось, отправляем новое фото
         await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
                                          photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
-                                         reply_markup=get_carousel_keyboard(new_index, driver.chat_id))
+                                         reply_markup=get_carousel_keyboard(new_index, driver.chat_id, style))
 
     await event.answer()
 
 
-def get_carousel_keyboard(current_index: int, chat_id: int) -> InlineKeyboardMarkup:
+def get_carousel_keyboard(current_index: int, chat_id: int, style: str) -> InlineKeyboardMarkup:
     """
     Создает инлайн-клавиатуру для навигации карусели с кнопками "⬅️" и "➡️".
     Callback data хранит текущий индекс и направление смены.
@@ -146,6 +147,6 @@ def get_carousel_keyboard(current_index: int, chat_id: int) -> InlineKeyboardMar
     builder.add(InlineKeyboardButton(text="➡️", callback_data=f"carousel:{current_index}:1"))
     builder.add(InlineKeyboardButton(text="⬅️⬅️⬅️", callback_data=f"carousel:{current_index}:-3"))
     builder.add(InlineKeyboardButton(text="➡️➡️➡️", callback_data=f"carousel:{current_index}:3"))
-    add_button("☑️ Выбрать этот аватар", "set-avatar", chat_id, builder, spot_id=current_index)
+    add_button("☑️ Выбрать этот аватар", "set-avatar", chat_id, builder, spot_id=current_index, style=style)
     builder.adjust(2, 2, 1)
     return builder.as_markup()

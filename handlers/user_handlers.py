@@ -77,7 +77,7 @@ async def get_status_message(driver: Driver, is_private, session, current_day):
             keyboard_sizes.append(1)
 
     if driver.attributes.get("plus", -1) > -1:
-        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder)
+        add_button("🎲 Карма! 🆓", "plus-karma", driver.chat_id, builder, style='primary')
         keyboard_sizes.append(1)
 
     if is_private:
