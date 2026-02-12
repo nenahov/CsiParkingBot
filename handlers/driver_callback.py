@@ -7,10 +7,10 @@ from aiogram.types import InlineKeyboardButton
 def add_button(text, action, chat_id, builder,
                spot_id: Optional[int] = None, day_num: Optional[int] = None,
                event_type: Optional[str] = None, bool_value: Optional[bool] = None,
-               style: Optional[str] = None):
+               style: Optional[str] = None, icon_custom_emoji_id: Optional[str] = None):
     builder.add(
         InlineKeyboardButton(text=text,
-                             style=style,
+                             style=style, icon_custom_emoji_id=icon_custom_emoji_id,
                              callback_data=MyCallback(action=action, user_id=chat_id,
                                                       spot_id=spot_id, day_num=day_num,
                                                       event_type=event_type, bool_value=bool_value).pack()))

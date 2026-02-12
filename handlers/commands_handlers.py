@@ -131,7 +131,8 @@ async def starter_info(callback: CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     builder.add(InlineKeyboardButton(text="ℹ️ Мой статус", switch_inline_query_current_chat='Мой статус'))
-    builder.add(InlineKeyboardButton(text="✉️ Написать разработчику",
+    builder.add(InlineKeyboardButton(text="Написать разработчику",
+                                     style='primary', icon_custom_emoji_id='5253742260054409879',
                                      switch_inline_query_current_chat='Написать разработчику: "Вместо этого текста напишите Ваше сообщение"'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
