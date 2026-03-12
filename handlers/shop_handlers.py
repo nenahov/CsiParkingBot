@@ -104,6 +104,54 @@ async def hide_shop(callback, session, driver, current_day, is_private):
         pass
 
 
+@router.callback_query(MyCallback.filter(F.action == "confirm-purchase"),
+                       flags={"lock_operation": "shop", "check_driver": True})
+async def confirm_purchase(callback, callback_data: MyCallback, session, driver, current_day, is_private):
+    """Показывает подтверждение покупки перед вызовом buy_item."""
+    seller = await DriverService(session).get_by_chat_id(callback_data.user_id)
+    if not seller:
+        await send_alarm(callback, "⚠️ Продавец не найден")
+        return
+    if callback_data.spot_id != seller.attributes.get("shop_id", 0):
+        await send_alarm(callback, "⚠️ Продавец прикрыл лавочку")
+        return
+    items = seller.attributes.get("shop_items", [])
+    if not items or callback_data.day_num >= len(items):
+        await send_alarm(callback, "⚠️ Товар не найден")
+        return
+
+    item = items[callback_data.day_num]
+    if item["count"] is not None and item["count"] <= item.get("sold", 0):
+        await send_alarm(callback, "⚠️ Товар закончился")
+        return
+    if seller.id == driver.id:
+        await send_alarm(callback, "⚠️ Нельзя купить у себя")
+        return
+    cost = get_cost(item["price"])
+    if cost > driver.get_karma():
+        await send_alarm(callback, "⚠️ У вас недостаточно кармы")
+        return
+
+    await callback.answer()
+    confirm_builder = InlineKeyboardBuilder()
+    add_button("✅ Подтвердить", "buy-item", callback_data.user_id, confirm_builder,
+               spot_id=callback_data.spot_id, day_num=callback_data.day_num)
+    add_button("❌ Отмена", "cancel-purchase", callback_data.user_id, confirm_builder)
+    confirm_builder.adjust(1)
+    text = f"Купить «{item['description']}» за {cost} 💟?"
+    await callback.message.answer(text, reply_markup=confirm_builder.as_markup())
+
+
+@router.callback_query(MyCallback.filter(F.action == "cancel-purchase"),
+                       flags={"lock_operation": "shop", "check_driver": True})
+async def cancel_purchase(callback, callback_data: MyCallback):
+    await callback.answer("Покупка отменена")
+    try:
+        await callback.message.edit_text("❌ Покупка отменена")
+    except Exception:
+        pass
+
+
 @router.callback_query(MyCallback.filter(F.action == "buy-item"),
                        flags={"lock_operation": "shop", "check_driver": True})
 async def buy_item(callback, callback_data: MyCallback, session, driver, current_day, is_private):
@@ -149,6 +197,10 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
                                            f'{driver.title} купил товар "{item["description"]}" у {seller.title}')
     await AuditService(session).log_action(seller.id, UserActionType.SHOP, current_day, -1,
                                            f'{seller.title} продал товар "{item["description"]}" {driver.title}')
+    try:
+        await callback.message.edit_text("✅ Покупка совершена!")
+    except Exception:
+        pass
     await send_alarm(callback,
                      f"✅ '{item['description']}' куплен!\n\nПродавец: {seller.title}\n\nВаш баланс: {driver.get_karma()} 💟")
     content, builder = await get_shop_content_and_keyboard(seller, is_private)
@@ -199,7 +251,7 @@ async def get_shop_keyboard(driver, items):
             continue
         add_button(f"{get_cost(item['price'])} 💟 → {item['description']} "
                    f"[{"∞" if item['count'] is None else (str(item['count'] - item.get("sold", 0)) + " / " + str(item['count']))}]",
-                   "buy-item", driver.chat_id, builder,
+                   "confirm-purchase", driver.chat_id, builder,
                    spot_id=driver.attributes.get("shop_id", 0),
                    day_num=idx)
     add_button("❎ Свернуть лавочку", "hide-shop", driver.chat_id, builder)
