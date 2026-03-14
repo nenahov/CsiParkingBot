@@ -24,6 +24,48 @@ def get_cost(price):
     return price + vat
 
 
+async def validate_purchase(callback, callback_data: MyCallback, session, driver, *, on_error=None, on_sold_out=None):
+    """
+    Проверяет возможность покупки. При ошибке вызывает on_error(код), отправляет сообщение и возвращает None.
+    При успехе возвращает (seller, item, items).
+    Коды ошибок: seller_not_found, shop_closed, item_not_found, sold_out, self_purchase, insufficient_karma.
+    on_sold_out — опциональный async callback(seller), вызывается при «товар закончился».
+    """
+    seller = await DriverService(session).get_by_chat_id(callback_data.user_id)
+    if not seller:
+        if on_error:
+            await on_error("seller_not_found")
+        await send_alarm(callback, "⚠️ Продавец не найден")
+        return None
+    if callback_data.spot_id != seller.attributes.get("shop_id", 0):
+        if on_error:
+            await on_error("shop_closed")
+        await send_alarm(callback, "⚠️ Продавец прикрыл лавочку")
+        return None
+    items = seller.attributes.get("shop_items", [])
+    if not items or callback_data.day_num >= len(items):
+        if on_error:
+            await on_error("item_not_found")
+        await send_alarm(callback, "⚠️ Товар не найден")
+        return None
+
+    item = items[callback_data.day_num]
+    if item["count"] is not None and item["count"] <= item.get("sold", 0):
+        await send_alarm(callback, "⚠️ Товар закончился")
+        if on_sold_out:
+            await on_sold_out(seller)
+        return None
+    if seller.id == driver.id:
+        await send_alarm(callback, "⚠️ Нельзя купить у себя")
+        return None
+    cost = get_cost(item["price"])
+    if cost > driver.get_karma():
+        await send_alarm(callback, "⚠️ У вас недостаточно кармы")
+        return None
+
+    return seller, item, items
+
+
 @router.message(
     F.text.regexp(r"(?i).*новый магазин добрых дел.*"),
     flags={"lock_operation": "shop", "check_driver": True})
@@ -108,29 +150,10 @@ async def hide_shop(callback, session, driver, current_day, is_private):
                        flags={"lock_operation": "shop", "check_driver": True})
 async def confirm_purchase(callback, callback_data: MyCallback, session, driver, current_day, is_private):
     """Показывает подтверждение покупки перед вызовом buy_item."""
-    seller = await DriverService(session).get_by_chat_id(callback_data.user_id)
-    if not seller:
-        await send_alarm(callback, "⚠️ Продавец не найден")
+    result = await validate_purchase(callback, callback_data, session, driver)
+    if result is None:
         return
-    if callback_data.spot_id != seller.attributes.get("shop_id", 0):
-        await send_alarm(callback, "⚠️ Продавец прикрыл лавочку")
-        return
-    items = seller.attributes.get("shop_items", [])
-    if not items or callback_data.day_num >= len(items):
-        await send_alarm(callback, "⚠️ Товар не найден")
-        return
-
-    item = items[callback_data.day_num]
-    if item["count"] is not None and item["count"] <= item.get("sold", 0):
-        await send_alarm(callback, "⚠️ Товар закончился")
-        return
-    if seller.id == driver.id:
-        await send_alarm(callback, "⚠️ Нельзя купить у себя")
-        return
-    cost = get_cost(item["price"])
-    if cost > driver.get_karma():
-        await send_alarm(callback, "⚠️ У вас недостаточно кармы")
-        return
+    seller, item, items = result
 
     await callback.answer()
     confirm_builder = InlineKeyboardBuilder()
@@ -138,7 +161,7 @@ async def confirm_purchase(callback, callback_data: MyCallback, session, driver,
                spot_id=callback_data.spot_id, day_num=callback_data.day_num)
     add_button("❌ Отмена", "cancel-purchase", callback_data.user_id, confirm_builder)
     confirm_builder.adjust(1)
-    text = f"Купить «{item['description']}» за {cost} 💟?"
+    text = f"Купить «{item['description']}» за {get_cost(item['price'])} 💟?"
     await callback.message.answer(text, reply_markup=confirm_builder.as_markup())
 
 
@@ -155,35 +178,21 @@ async def cancel_purchase(callback, callback_data: MyCallback):
 @router.callback_query(MyCallback.filter(F.action == "buy-item"),
                        flags={"lock_operation": "shop", "check_driver": True})
 async def buy_item(callback, callback_data: MyCallback, session, driver, current_day, is_private):
-    seller = await DriverService(session).get_by_chat_id(callback_data.user_id)
-    if not seller:
-        await send_alarm(callback, "⚠️ Продавец не найден")
-        await callback.message.delete()
-        return
-    if callback_data.spot_id != seller.attributes.get("shop_id", 0):
-        await send_alarm(callback, "⚠️ Продавец прикрыл лавочку")
-        await callback.message.delete()
-        return
-    items = seller.attributes["shop_items"]
-    if items is None or callback_data.day_num >= len(items):
-        await send_alarm(callback, "⚠️ Товар не найден")
-        await callback.message.delete()
-        return
+    async def on_error(error_type):
+        if error_type in ("seller_not_found", "shop_closed", "item_not_found"):
+            await callback.message.delete()
 
-    item = items[callback_data.day_num]
-    if item["count"] is not None and item["count"] <= item.get("sold", 0):
-        await send_alarm(callback, "⚠️ Товар закончился")
+    async def on_sold_out(seller):
         content, builder = await get_shop_content_and_keyboard(seller, is_private)
         await send_reply(callback, content, builder)
-        return
 
-    if seller.id == driver.id:
-        await send_alarm(callback, "⚠️ Нельзя купить у себя")
+    result = await validate_purchase(
+        callback, callback_data, session, driver,
+        on_error=on_error, on_sold_out=on_sold_out
+    )
+    if result is None:
         return
-
-    if get_cost(item["price"]) > driver.get_karma():
-        await send_alarm(callback, "⚠️ У вас недостаточно кармы")
-        return
+    seller, item, items = result
 
     driver.attributes["karma"] = driver.get_karma() - get_cost(item["price"])
     seller.attributes["karma"] = seller.get_karma() + item["price"]
