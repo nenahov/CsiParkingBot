@@ -15,7 +15,7 @@ router = Router()
 
 
 @router.message(or_f(Command("queue"), F.text.regexp(r"(?i)(.*пока.* очередь)|(.*очередь парковки)")),
-                flags={"check_driver": True})
+                flags={"lock_operation": "queue", "check_driver": True})
 async def queue_command(message: Message, session, driver, is_private):
     queue_service = QueueService(session)
     queue_all = await queue_service.get_all()
@@ -28,20 +28,21 @@ async def queue_command(message: Message, session, driver, is_private):
 
 
 @router.callback_query(MyCallback.filter(F.action == "leave-queue"),
-                       flags={"check_driver": True, "check_callback": True})
+                       flags={"lock_operation": "queue", "check_driver": True, "check_callback": True})
 async def leave_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     await leave_queue(callback, session, driver, current_day)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
 @router.callback_query(MyCallback.filter(F.action == "join-queue"),
-                       flags={"check_driver": True, "check_callback": True})
+                       flags={"lock_operation": "queue", "check_driver": True, "check_callback": True})
 async def join_queue_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day, is_private):
     await join_queue(callback, session, driver, current_day)
     await show_status_callback(callback, session, driver, current_day, is_private)
 
 
-@router.message(F.text.regexp(r"(?i)(.*покинуть очередь)|(.*выйти из очереди)"), flags={"check_driver": True})
+@router.message(F.text.regexp(r"(?i)(.*покинуть очередь)|(.*выйти из очереди)"),
+                flags={"lock_operation": "queue", "check_driver": True})
 async def leave_queue(message, session, driver, current_day):
     queue_service = QueueService(session)
     in_queue = await queue_service.is_driver_in_queue(driver)
@@ -54,7 +55,8 @@ async def leave_queue(message, session, driver, current_day):
                                            description=f"{driver.description} покинул очередь")
 
 
-@router.message(F.text.regexp(r"(?i)(.*встать в очередь)|(.*хочу свободное место)"), flags={"check_driver": True})
+@router.message(F.text.regexp(r"(?i)(.*встать в очередь)|(.*хочу свободное место)"),
+                flags={"lock_operation": "queue", "check_driver": True})
 async def join_queue(message, session, driver, current_day):
     queue_service = QueueService(session)
     in_queue = await queue_service.is_driver_in_queue(driver)
