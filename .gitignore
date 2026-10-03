@@ -171,3 +171,6 @@ cython_debug/
 .pypirc
 /my_keys.py
 /pics/racing/
+/pics/temp/
+/pics/temp1/
+/.serena/

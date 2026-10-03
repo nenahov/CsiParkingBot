@@ -25,7 +25,7 @@ weather_map = {
     "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 20},
     "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 30},
     "13": {"icon": "🌨️", "num_clouds": 5, "snow_count": 500},
-    "50": {"icon": "🌫️", "num_clouds": 50}
+    "50": {"icon": "🌫️", "fog": True}
 }
 
 

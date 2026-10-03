@@ -8,7 +8,9 @@ from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
 from services.weather_service import WeatherService
 from utils.cars_generator import get_car, draw_car_with_shadow, cars_count
-from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer, add_snow
+from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer, add_snow, \
+    LIGHTNING_CHANCE, make_snow_cover_layer, make_winter_tint, frost_car, make_sun_warmth_layer, \
+    make_fog_layer
 
 # Цвета для разных статусов
 COLORS = {
@@ -50,6 +52,50 @@ dx = 0
 dy = 0
 d_width = -1
 
+# Пиксели parking_r.png (1111x650). Проезды: две колеи вдоль длинной стороны
+PARKING_LANES = [
+    (122, 222, 1083, 268),  # между 52-64 и 35-51
+    (122, 471, 1083, 518),  # между 18-34 и 1-17
+    (122, 222, 168, 518),  # левый, вдоль 69-74
+    (1041, 25, 1083, 650),  # правый, к въезду
+]
+
+# Ряды мест: колея на них не рисуется
+PARKING_SPOT_AREAS = [
+    (120, 520, 987, 620),  # 1-17
+    (171, 371, 1038, 469),  # 18-34
+    (171, 270, 1038, 371),  # 35-51
+    (374, 119, 1036, 220),  # 52-64
+    (15, 170, 119, 520),  # 69-74
+    (425, 20, 1036, 119),  # 65-68
+]
+
+SNOWFALL_MULTIPLIER = 2.0
+FROST_SNOW_MULTIPLIER = 1.3
+
+
+def _parse_temp(temp):
+    if not temp:
+        return None
+    sign = -1 if "-" in str(temp) else 1
+    digits = "".join(ch for ch in str(temp) if ch.isdigit())
+    if not digits:
+        return None
+    return sign * int(digits)
+
+
+def _winter_strength(temp, weather):
+    snow_count = weather.get("snow_count", 0)
+    rain_drop_count = weather.get("rain_drop_count", 0)
+    if snow_count > 0:
+        return 1.0
+    temp_value = _parse_temp(temp)
+    if temp_value is not None and temp_value < 0 and rain_drop_count > 0:
+        return 0.8
+    if temp_value is not None and temp_value < 0:
+        return 0.6
+    return 0
+
 cars = Image.open("./pics/cars.png").convert("RGBA")
 snowman_img = Image.open("./pics/snowman.png").convert("RGBA")
 parking_img = Image.open("./pics/parking_r.png")
@@ -68,16 +114,27 @@ async def generate_parking_map(parking_spots,
                                use_spot_status: bool = True,
                                frame_index: int = None,
                                day: date = None,
-                               is_test: bool = False):
+                               is_test: bool = False,
+                               weather_override: tuple = None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
-    if not is_test:
+    if weather_override is not None:
+        temp, weather, desc = weather_override
+    elif not is_test:
         temp, weather, desc = await WeatherService().get_weather_string(day)
     else:
         temp, weather, desc = await WeatherService().get_weather_test(day)
-    # солнце рисуем вначале, дождь и облака в конце
-    if weather.get("sun_alpha", 0) > 0:
-        sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=weather.get("sun_alpha", 0))
+    sun_alpha = weather.get("sun_alpha", 0)
+    winter_strength = _winter_strength(temp, weather)
+    # Солнце рисуем вначале, дождь, снег и туман — в конце
+    if sun_alpha > 0:
+        sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=sun_alpha)
         overlay = Image.alpha_composite(overlay, sun_layer)
+        if winter_strength == 0:
+            overlay = Image.alpha_composite(overlay, make_sun_warmth_layer(parking_img))
+
+    if winter_strength > 0:
+        overlay = Image.alpha_composite(
+            overlay, make_snow_cover_layer(parking_img, winter_strength, PARKING_LANES, PARKING_SPOT_AREAS))
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
@@ -129,7 +186,22 @@ async def generate_parking_map(parking_spots,
                 new_size = (int(car_image.width * scale), int(car_image.height * scale))
                 car_image = car_image.resize(new_size)
             car_image = car_image.rotate(car_rotate, expand=True)
-            draw_car_with_shadow(car_image, overlay, dx + car_x, dy + car_y)
+            if winter_strength > 0:
+                car_image = frost_car(car_image, winter_strength)
+            if sun_alpha > 0:
+                shadow_dx, shadow_dy = ((8, 6) if winter_strength > 0 else (10, 8))
+                shadow_blur = 12 if winter_strength > 0 else 11
+            else:
+                shadow_dx, shadow_dy, shadow_blur = 5, 5, 10
+            draw_car_with_shadow(
+                car_image,
+                overlay,
+                dx + car_x,
+                dy + car_y,
+                shadow_dx=shadow_dx,
+                shadow_dy=shadow_dy,
+                blur_radius=shadow_blur,
+            )
         else:
             # Создаем паттерн с диагональными полосами
             pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
@@ -142,20 +214,41 @@ async def generate_parking_map(parking_spots,
     if frame_index:
         await add_garbage_truck(frame_index, overlay)
 
-    # Рисуем дождь/снег и облака
-    if weather.get("rain_drop_count", 0) > 0:
-        if "-" in temp:
-            overlay = add_snow(overlay, snow_count=weather.get("rain_drop_count", 0) // 2, snow_size_range=(2, 3))
-        else:
-            overlay = make_rain_layer(overlay, drop_count=weather.get("rain_drop_count", 0))
-
-    if weather.get("snow_count", 0) > 0:
+    # Снеговик под облаками, хлопья и дождь — поверх
+    rain_drop_count = weather.get("rain_drop_count", 0)
+    snow_count = weather.get("snow_count", 0)
+    if snow_count > 0:
         overlay = await add_snowman(overlay)
-        overlay = add_snow(overlay, snow_count=weather.get("snow_count", 0))
 
-    if weather.get("num_clouds", 0) > 0:
+    is_fog = bool(
+        weather.get("fog")
+        or (
+                weather.get("num_clouds", 0) >= 40
+                and rain_drop_count == 0
+                and snow_count == 0
+        )
+    )
+    if weather.get("num_clouds", 0) > 0 and not is_fog:
         cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
         overlay = Image.alpha_composite(overlay, cloud_layer)
+
+    if rain_drop_count > 0 and "-" in temp:
+        overlay = add_snow(overlay, snow_count=int(rain_drop_count * FROST_SNOW_MULTIPLIER),
+                           snow_size_range=(2, 3))
+    if snow_count > 0:
+        overlay = add_snow(overlay, snow_count=int(snow_count * SNOWFALL_MULTIPLIER))
+
+    # Дождь поверх облаков, иначе облака его закрывают
+    if rain_drop_count > 0 and "-" not in temp:
+        overlay = make_rain_layer(overlay, drop_count=rain_drop_count,
+                                  lightning_chance=weather.get("lightning_chance", LIGHTNING_CHANCE))
+
+    if winter_strength > 0:
+        tint_strength = winter_strength * (0.5 if sun_alpha > 0 else 1.0)
+        overlay = Image.alpha_composite(overlay, make_winter_tint(overlay.size, tint_strength))
+
+    if is_fog:
+        overlay = Image.alpha_composite(overlay, make_fog_layer(overlay.size))
 
     # Добавляем текст
     draw = ImageDraw.Draw(overlay)

@@ -5,7 +5,19 @@ from datetime import timedelta, datetime, date
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardButton,
+    FSInputFile,
+    InputMediaPhoto,
+    InputRichMessage,
+    InputRichBlockPhoto,
+    InputRichBlockSlideshow,
+    InputRichBlockParagraph,
+    InputRichBlockSectionHeading,
+    RichBlockCaption,
+)
 from aiogram.utils.formatting import Text, TextLink, Bold, as_marked_section, as_key_value
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -455,3 +467,34 @@ async def check_spot(message: Message, session: AsyncSession, current_day, match
                                  marker="• ",
                                  )
     await send_reply(message, content, InlineKeyboardBuilder())
+
+
+@router.message(F.text.regexp(r"(?i).*слайды.*").as_("match"), flags={"check_driver": True})
+async def test_slides(message: Message, session: AsyncSession, current_day, match: re.Match):
+    slideshow = InputRichBlockSlideshow(
+        blocks=[
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(media=FSInputFile("pics/racing/photo_2025-05-11_00-49-29.jpg")),
+                caption=RichBlockCaption(text="Слайд 1: первый экран"),
+            ),
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(media=FSInputFile("pics/racing/photo_2025-05-11_00-49-49.jpg")),
+                caption=RichBlockCaption(text="Слайд 2: второй экран"),
+            ),
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(media=FSInputFile("pics/racing/photo_2025-05-11_00-50-47.jpg")),
+                caption=RichBlockCaption(text="Слайд 3: финальный экран"),
+            ),
+        ],
+        caption=RichBlockCaption(text="Демонстрация из трёх слайдов"),
+    )
+
+    rich_message = InputRichMessage(
+        blocks=[
+            InputRichBlockSectionHeading(text="Презентация товара", size=1),
+            slideshow,
+            InputRichBlockParagraph(text="Это одно rich-сообщение с несколькими слайдами."),
+        ]
+    )
+
+    await message.answer_rich(rich_message=rich_message)

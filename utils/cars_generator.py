@@ -324,17 +324,24 @@ def get_weather_for_segments(seg_count, game_state: GameState, players):
     return result
 
 
-def draw_car_with_shadow(car_image, frame, car_x, car_y):
+def draw_car_with_shadow(
+        car_image,
+        frame,
+        car_x,
+        car_y,
+        shadow_dx=5,
+        shadow_dy=5,
+        blur_radius=10
+):
     # Создаем тень
     shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
     shadow.putalpha(car_image.split()[3])
     shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
     shadow.putalpha(car_image.split()[3])
-    blur_radius = 10  # радиус размытия тени
     shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
 
     # Смещаем тень относительно машины
-    shadow_position = (car_x + 5, car_y + 5)
+    shadow_position = (car_x + shadow_dx, car_y + shadow_dy)
 
     # Накладываем тень
     frame.paste(shadow, shadow_position, mask=car_image)
