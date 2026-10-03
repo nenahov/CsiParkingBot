@@ -567,7 +567,7 @@ async def generate_weather_samples(output_dir: str = "pics/temp") -> None:
         SimpleNamespace(
             id=spot_id, x=0, y=0, width=40, height=80,
             status=SpotStatus.OCCUPIED,
-            current_driver_id=index + 1,
+            current_driver_id=index + 1 + random.randint(0, 50),
             current_driver=None,
         )
         for index, spot_id in enumerate((3, 8, 14, 22, 30, 40, 46, 74))

@@ -1,15 +1,26 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from io import BytesIO
 
 from aiogram import Router, F
 from aiogram.filters import Command, or_f
-from aiogram.types import Message, BufferedInputFile, CallbackQuery
+from aiogram.types import (
+    Message,
+    BufferedInputFile,
+    CallbackQuery,
+    InputMediaPhoto,
+    InputRichMessage,
+    InputRichBlockPhoto,
+    InputRichBlockParagraph,
+    RichMessageButton,
+    RichTextButton,
+)
 from aiogram.utils.formatting import Text, Bold, Code
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from handlers.driver_callback import add_button, MyCallback
 from models.driver import Driver
+from services.notification_sender import send_alarm
 from services.param_service import ParamService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
@@ -18,52 +29,31 @@ from utils.map_generator import generate_parking_map
 router = Router()
 
 
-@router.message(F.text.regexp(r"(?i)(.*пока.* (схем|карт)(а|у) на завтра)|(.*(схем|карт)(а|у) парковки на завтра)"),
-                flags={"long_operation": "upload_photo", "check_driver": True})
-async def map_tomorrow_command(message: Message, session, driver, current_day, is_private):
-    day = current_day + timedelta(days=1)
-
-    # Получаем данные для карты
-    parking_service = ParkingService(session)
-    spots, reservations = await parking_service.get_spots_with_reservations(day)
-    frame_index = await get_frame_index(message, session)
-
-    # Генерируем карту
-    img = await generate_parking_map(parking_spots=spots, reservations_data=reservations,
-                                     driver=driver if is_private else None,
-                                     use_spot_status=False, frame_index=frame_index,
-                                     day=day
-                                     )
-
-    img_buffer = BytesIO()
-    img.save(img_buffer, format="PNG")
-    img_buffer.seek(0)
-
-    builder = InlineKeyboardBuilder()
-    if is_private:
-        add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
-
-    # Отправка изображения
-    await message.answer_photo(
-        BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
-        caption=f"Карта парковки на завтра {day.strftime('%a %d.%m.%Y')}\n\n"
-                f"🔴 - забронировано\n"
-                f"{'🟡 - забронировано Вами\n' if is_private else ''}"
-                f"🟢 - свободно",
-        reply_markup=builder.as_markup()
-    )
-
-
 @router.message(or_f(Command("map"), F.text.regexp(r"(?i)(.*пока.* (схем|карт)(а|у))|(.*(схем|карт)(а|у) парковки)")),
                 flags={"long_operation": "upload_photo", "check_driver": True})
 async def map_command(message: Message, session, driver, current_day, is_private):
-    # Получаем данные для карты
+    frame_index = await get_frame_index(message, session)
+    rich_message, builder = await build_map_message(session, driver, current_day, is_private, frame_index)
+    await message.answer_rich(rich_message=rich_message, reply_markup=builder.as_markup())
+
+
+@router.callback_query(MyCallback.filter(F.action == "refresh-map"),
+                       flags={"long_operation": "upload_photo", "check_driver": True})
+async def refresh_map(callback: CallbackQuery, callback_data: MyCallback, session, driver, current_day, is_private):
+    if current_day.toordinal() != callback_data.day_num:
+        await send_alarm(callback, "Древняя карта, обновить не удастся 🏛️")
+        return
+    await callback.answer()
+    rich_message, builder = await build_map_message(session, driver, current_day, is_private,
+                                                    callback_data.spot_id)
+    await callback.message.edit_text(rich_message=rich_message, reply_markup=builder.as_markup())
+
+
+async def build_map_message(session, driver, current_day, is_private, frame_index):
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
-    frame_index = await get_frame_index(message, session)
     for spot in spots:
         await session.refresh(spot, ["current_driver"])
-    # Генерируем карту
     img = await generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
@@ -74,28 +64,44 @@ async def map_command(message: Message, session, driver, current_day, is_private
 
     img_buffer = BytesIO()
     img.save(img_buffer, format="PNG")
-    img_buffer.seek(0)
 
     builder = InlineKeyboardBuilder()
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
-    queue_service = QueueService(session)
-    queue_all = await queue_service.get_all()
+    queue_all = await QueueService(session).get_all()
 
-    # Отправка изображения
-    await message.answer_photo(
-        BufferedInputFile(img_buffer.getvalue(), filename="map.png"),
-        caption=f"Карта парковки на {current_day.strftime('%a %d.%m.%Y')}.\n"
-                f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')})\n\n"
-                f"🔴 - забронировано\n"
-                f"{'🟡 - забронировано Вами\n' if is_private else ''}"
-                f"🟢 - свободно\n\n"
-                f"Всего в очереди: {len(queue_all)} человек(а)\n"
-        # Список позиций и водителей в очереди
-                f"{''.join(f'• {queue.driver.description}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}",
-        reply_markup=builder.as_markup()
+    refresh_button = RichTextButton(
+        button=RichMessageButton(
+            text="Обновить",
+            callback_data=MyCallback(action="refresh-map", user_id=0, spot_id=frame_index,
+                                     day_num=current_day.toordinal(), event_type=None,
+                                     bool_value=None).pack(),
+            style="link",
+        )
     )
+
+    legend = ("🔴 - забронировано\n"
+              f"{'🟡 - забронировано Вами\n' if is_private else ''}"
+              "🟢 - свободно")
+    queue_text = (f"Всего в очереди: {len(queue_all)} человек(а)\n"
+                  f"{''.join(f'• {queue.driver.description}{(" ❗️🏆 ❗️ " + str(queue.spot_id) + " место до " + queue.choose_before.strftime('%H:%M')) if queue.spot_id else ''}\n' for queue in queue_all)}")
+
+    rich_message = InputRichMessage(
+        blocks=[
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(media=BufferedInputFile(img_buffer.getvalue(), filename="map.png")),
+            ),
+            InputRichBlockParagraph(text=f"Карта парковки на {current_day.strftime('%a %d.%m.%Y')}."),
+            InputRichBlockParagraph(text=[
+                f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')}) ",
+                refresh_button,
+            ]),
+            InputRichBlockParagraph(text=legend),
+            InputRichBlockParagraph(text=queue_text.rstrip("\n")),
+        ]
+    )
+    return rich_message, builder
 
 
 async def get_frame_index(message, session):

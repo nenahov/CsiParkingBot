@@ -13,8 +13,8 @@ from utils.weather_generator import make_sun_glare_layer, get_clouds_layer, add_
 logger = logging.getLogger(__name__)
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
-cars_count = 24
-extra_cars_count = 29
+cars_count = 60
+extra_cars_count = 60
 regular_font = ImageFont.truetype("ariali.ttf", 40)
 car_w, car_h = (100, 50)
 finish_block_size = 5

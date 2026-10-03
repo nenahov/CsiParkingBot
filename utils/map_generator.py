@@ -31,13 +31,32 @@ COLORS = {
     'text': (0, 0, 0)  # Черный
 }
 
-garbage_truck_frames = [(-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0), (-1000, -1000, 0),
-                        (1030, 610, 45), (1020, 510, 10),
-                        (980, 480, 45), (840, 470, 90), (580, 470, 90), (200, 470, 90),
-                        (110, 450, 45), (117, 370, -3), (125, 180, -20),
-                        (265, 170, 268), (130, 175, 270), (145, 170, 270), (130, 170, 270), (135, 170, 270),
-                        (270, 180, 250), (475, 220, 270), (830, 218, 270), (980, 215, 240),
-                        (1030, 245, 184), (1042, 460, 180), (1042, 610, 200)]
+GARBAGE_TRUCK_CAR_INDEX = 32
+GARBAGE_TRUCK_STEP = 70
+
+# Опорные точки (x, y, угол): между ними кадры добавляются с шагом GARBAGE_TRUCK_STEP
+GARBAGE_TRUCK_APPROACH = [(1030, 610, 45), (1020, 510, 10), (980, 480, 90), (200, 470, 90),
+                          (110, 450, 45), (117, 370, 0), (125, 180, -20), (130, 175, 270)]
+# Манёвры у мусорки: точки ближе шага, вставляются без уплотнения
+GARBAGE_TRUCK_PAUSE = [(265, 170, 268), (130, 175, 270), (145, 170, 270), (130, 170, 270), (135, 170, 270)]
+GARBAGE_TRUCK_DEPARTURE = [(135, 170, 270), (980, 215, 270), (1030, 245, 180), (1042, 610, 180), (1042, 700, 180)]
+
+
+def _interpolate_route(points, step):
+    frames = [points[0]]
+    for (x1, y1, a1), (x2, y2, a2) in zip(points, points[1:]):
+        count = max(1, round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 / step))
+        da = (a2 - a1 + 180) % 360 - 180
+        for i in range(1, count + 1):
+            t = i / count
+            frames.append((round(x1 + (x2 - x1) * t), round(y1 + (y2 - y1) * t), round(a1 + da * t)))
+    return frames
+
+
+garbage_truck_frames = ([(-1000, -1000, 0)] * 3
+                        + _interpolate_route(GARBAGE_TRUCK_APPROACH, GARBAGE_TRUCK_STEP)
+                        + GARBAGE_TRUCK_PAUSE
+                        + _interpolate_route(GARBAGE_TRUCK_DEPARTURE, GARBAGE_TRUCK_STEP)[1:])
 
 SNOWMAN_BOXES = [
     (20, 30, 128, 163),
@@ -73,6 +92,47 @@ PARKING_SPOT_AREAS = [
 SNOWFALL_MULTIPLIER = 2.0
 FROST_SNOW_MULTIPLIER = 1.3
 
+RANDOM_CARS_EXTRA_MAX = 3
+RANDOM_CARS_EXCLUDED = set(range(65, 69))
+
+
+def get_spot_layout(spot_id: int):
+    """(x, y, car_x, car_y, car_rotate) по подложке parking_r.png или None."""
+    if 1 <= spot_id <= 17:
+        x, y = 120 + (spot_id - 1) * 51, 520
+        return x, y, x + 2, y + 14, 0
+    if 18 <= spot_id <= 34:
+        x, y = 171 + (spot_id - 18) * 51, 371
+        return x, y, x + 2, y + 3, 180
+    if 35 <= spot_id <= 51:
+        x, y = 171 + (spot_id - 35) * 51, 270
+        return x, y, x + 2, y + 14, 0
+    if 52 <= spot_id <= 64:
+        x, y = 374 + (spot_id - 52) * 51, 119
+        return x, y, x + 2, y + 3, 180
+    if 69 <= spot_id <= 74:
+        x, y = 17, 220 + (74 - spot_id) * 50
+        return x, y, x + 2, y + 2, -90
+    return None
+
+
+def _shows_driver_car(spot, use_spot_status):
+    return (use_spot_status
+            and spot.current_driver_id is not None
+            and spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND))
+
+
+def _random_car_spots(parking_spots, use_spot_status):
+    shown = sum(1 for spot in parking_spots
+                if _shows_driver_car(spot, use_spot_status) and get_spot_layout(spot.id) is not None)
+    db_ids = {spot.id for spot in parking_spots}
+    free = [spot_id for spot_id in range(1, 75)
+            if spot_id not in db_ids
+            and spot_id not in RANDOM_CARS_EXCLUDED
+            and get_spot_layout(spot_id) is not None]
+    count = min(shown + random.randint(0, RANDOM_CARS_EXTRA_MAX), len(free))
+    return random.sample(free, count)
+
 
 def _parse_temp(temp):
     if not temp:
@@ -96,7 +156,6 @@ def _winter_strength(temp, weather):
         return 0.6
     return 0
 
-cars = Image.open("./pics/cars.png").convert("RGBA")
 snowman_img = Image.open("./pics/snowman.png").convert("RGBA")
 parking_img = Image.open("./pics/parking_r.png")
 
@@ -136,72 +195,28 @@ async def generate_parking_map(parking_spots,
         overlay = Image.alpha_composite(
             overlay, make_snow_cover_layer(parking_img, winter_strength, PARKING_LANES, PARKING_SPOT_AREAS))
 
+    for spot_id in _random_car_spots(parking_spots, use_spot_status):
+        _, _, car_x, car_y, car_rotate = get_spot_layout(spot_id)
+        _draw_parked_car(overlay, random.randrange(cars_count), car_x, car_y, car_rotate,
+                         winter_strength, sun_alpha)
+
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
         status = get_status(driver, reservations_data, spot, use_spot_status)
 
-        x = spot.x
-        y = spot.y
-        car_x = -1000
-        car_y = -1000
-        car_rotate = 0
-        if 1 <= spot.id <= 17:
-            x = 120 + int((spot.id - 1) * 51)
-            y = 520
-            car_x = x + 2
-            car_y = y + 14
-            car_rotate = 0
-        elif 18 <= spot.id <= 34:
-            x = 171 + int((spot.id - 18) * 51)
-            y = 371
-            car_x = x + 2
-            car_y = y + 3
-            car_rotate = 180
-        elif 35 <= spot.id <= 51:
-            x = 171 + int((spot.id - 35) * 51)
-            y = 270
-            car_x = x + 2
-            car_y = y + 14
-            car_rotate = 0
-        elif spot.id == 74:
-            x = 17
-            y = 220
-            car_x = x + 2
-            car_y = y + 2
-            car_rotate = -90
+        layout = get_spot_layout(spot.id)
+        if layout is not None:
+            x, y, car_x, car_y, car_rotate = layout
+        else:
+            x, y, car_x, car_y, car_rotate = spot.x, spot.y, -1000, -1000, 0
 
-        if (use_spot_status
-                and spot.current_driver_id is not None
-                and spot.status is not None
-                and spot.status in (SpotStatus.OCCUPIED, SpotStatus.OCCUPIED_WITHOUT_DEMAND)):
+        if _shows_driver_car(spot, use_spot_status):
             if spot.current_driver:
                 car_index = spot.current_driver.attributes.get("car_index", spot.current_driver_id % cars_count)
             else:
                 car_index = spot.current_driver_id % cars_count
 
-            car_image = get_car(car_index)
-
-            scale = 0.8
-            if scale != 1:
-                new_size = (int(car_image.width * scale), int(car_image.height * scale))
-                car_image = car_image.resize(new_size)
-            car_image = car_image.rotate(car_rotate, expand=True)
-            if winter_strength > 0:
-                car_image = frost_car(car_image, winter_strength)
-            if sun_alpha > 0:
-                shadow_dx, shadow_dy = ((8, 6) if winter_strength > 0 else (10, 8))
-                shadow_blur = 12 if winter_strength > 0 else 11
-            else:
-                shadow_dx, shadow_dy, shadow_blur = 5, 5, 10
-            draw_car_with_shadow(
-                car_image,
-                overlay,
-                dx + car_x,
-                dy + car_y,
-                shadow_dx=shadow_dx,
-                shadow_dy=shadow_dy,
-                blur_radius=shadow_blur,
-            )
+            _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha)
         else:
             # Создаем паттерн с диагональными полосами
             pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
@@ -260,6 +275,33 @@ async def generate_parking_map(parking_spots,
     return result
 
 
+def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha):
+    car_image = get_car(car_index)
+
+    scale = 0.8
+    if scale != 1:
+        new_size = (int(car_image.width * scale), int(car_image.height * scale))
+        car_image = car_image.resize(new_size)
+    car_image = car_image.rotate(car_rotate, expand=True)
+    if winter_strength > 0:
+        car_image = frost_car(car_image, winter_strength)
+    if sun_alpha > 0:
+        # Короткий сдвиг: длинная тень выглядит так, будто машина висит над землёй
+        shadow_dx, shadow_dy = ((2, 2) if winter_strength > 0 else (3, 2))
+        shadow_blur = 3 if winter_strength > 0 else 4
+    else:
+        shadow_dx, shadow_dy, shadow_blur = 5, 5, 10
+    draw_car_with_shadow(
+        car_image,
+        overlay,
+        dx + car_x,
+        dy + car_y,
+        shadow_dx=shadow_dx,
+        shadow_dy=shadow_dy,
+        blur_radius=shadow_blur,
+    )
+
+
 async def add_snowman(overlay):
     # Рисуем снеговика
     index = random.randint(0, 5)
@@ -286,11 +328,7 @@ async def add_snowman(overlay):
 
 async def add_garbage_truck(frame_index, overlay):
     # Рисуем мусорку
-    garbage_truck = extract_sprite(cars, (0, 130, 55, 255))
-    scale = 0.8
-    if scale != 1:
-        new_size = (int(garbage_truck.width * scale), int(garbage_truck.height * scale))
-        garbage_truck = garbage_truck.resize(new_size)
+    garbage_truck = get_car(GARBAGE_TRUCK_CAR_INDEX)
     frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
     garbage_truck = garbage_truck.rotate(frame[2], expand=True)
     pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
@@ -337,17 +375,6 @@ def create_diagonal_pattern(width, height, stripe_width=10, color1="red", color2
 
     # Обрезаем до нужного размера
     return pattern.crop((width / 2, height / 2, width + width / 2, height + height / 2))
-
-
-def extract_sprite(sprite_sheet, sprite_rect):
-    """
-    Извлекает спрайт из спрайт-листа.
-
-    :param sprite_sheet: Изображение со спрайт-листом (PIL Image)
-    :param sprite_rect: Кортеж (left, top, right, bottom), задающий область спрайта
-    :return: Извлечённое изображение спрайта
-    """
-    return sprite_sheet.crop(sprite_rect)
 
 
 async def main() -> None:
