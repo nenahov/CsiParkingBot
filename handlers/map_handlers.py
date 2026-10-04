@@ -44,22 +44,27 @@ async def refresh_map(callback: CallbackQuery, callback_data: MyCallback, sessio
         await send_alarm(callback, "Древняя карта, обновить не удастся 🏛️")
         return
     await callback.answer()
-    rich_message, builder = await build_map_message(session, driver, current_day, is_private,
-                                                    callback_data.spot_id)
+    rich_message, builder = await build_map_message(
+        session, driver, current_day, is_private, callback_data.spot_id,
+        numbers_on_top=bool(callback_data.bool_value),
+    )
     await callback.message.edit_text(rich_message=rich_message, reply_markup=builder.as_markup())
 
 
-async def build_map_message(session, driver, current_day, is_private, frame_index):
+async def build_map_message(session, driver, current_day, is_private, frame_index, numbers_on_top=False):
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
     for spot in spots:
         await session.refresh(spot, ["current_driver"])
+    queue_all = await QueueService(session).get_all()
     img = await generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
         driver=driver if is_private else None,
         frame_index=frame_index,
-        day=current_day
+        day=current_day,
+        queue=queue_all,
+        numbers_on_top=numbers_on_top,
     )
 
     img_buffer = BytesIO()
@@ -69,14 +74,21 @@ async def build_map_message(session, driver, current_day, is_private, frame_inde
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
-    queue_all = await QueueService(session).get_all()
-
     refresh_button = RichTextButton(
         button=RichMessageButton(
             text="Обновить",
             callback_data=MyCallback(action="refresh-map", user_id=0, spot_id=frame_index,
                                      day_num=current_day.toordinal(), event_type=None,
-                                     bool_value=None).pack(),
+                                     bool_value=True if numbers_on_top else False).pack(),
+            style="link",
+        )
+    )
+    numbers_button = RichTextButton(
+        button=RichMessageButton(
+            text="Номера под машинами" if numbers_on_top else "Номера поверх машин",
+            callback_data=MyCallback(action="refresh-map", user_id=0, spot_id=frame_index,
+                                     day_num=current_day.toordinal(), event_type=None,
+                                     bool_value=not numbers_on_top).pack(),
             style="link",
         )
     )
@@ -96,6 +108,8 @@ async def build_map_message(session, driver, current_day, is_private, frame_inde
             InputRichBlockParagraph(text=[
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')}) ",
                 refresh_button,
+                " · ",
+                numbers_button,
             ]),
             InputRichBlockParagraph(text=legend),
             InputRichBlockParagraph(text=queue_text.rstrip("\n")),

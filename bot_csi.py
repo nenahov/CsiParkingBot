@@ -2,6 +2,7 @@ import asyncio
 import locale
 import logging
 import os
+from datetime import date
 
 from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +21,8 @@ from middlewares.my_callback_check import MyCallbackCheckMiddleware
 from middlewares.new_day_check import NewDayCheckMiddleware
 from services.param_service import ParamService
 from services.queue_service import QueueService
+from services.weather_service import WeatherService
+from utils.build_parking_backdrop import ensure_parking_backdrop
 from utils.new_day_checker import check_current_day, check_auto_karma_for_absent
 
 
@@ -35,6 +38,13 @@ async def main():
     dp = Dispatcher()
 
     await create_database()
+
+    try:
+        temp, weather, _desc = await WeatherService().get_weather_string(date.today())
+    except Exception:
+        logging.exception("Не удалось получить погоду для схемы парковки")
+        temp, weather = None, None
+    ensure_parking_backdrop(date.today(), temp, weather)
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_message_to_queue, "interval", seconds=1 * 60, args=(bot,))

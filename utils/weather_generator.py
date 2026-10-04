@@ -488,18 +488,33 @@ def make_fog_layer(size):
 
 
 def frost_car(car_image, strength):
-    """Снежная шапка на верхней половине кузова."""
+    """Неровный наст на крыше и капоте. Цвет кузова остаётся, узор каждый раз новый."""
     car = car_image.convert("RGBA")
     width, height = car.size
+    if width < 2 or height < 2 or strength <= 0:
+        return car
+    noise = _low_frequency_noise(car.size, cell=4)
+    roof = max(1, int(height * 0.58))
     gradient = Image.new("L", (1, height))
-    midpoint = max(1, height // 2)
-    gradient.putdata([int(255 * (1 - y / midpoint)) if y < midpoint else 0 for y in range(height)])
+    gradient.putdata([
+        int(255 * (1 - 0.35 * y / roof)) if y < roof else int(70 * (height - y) / max(1, height - roof))
+        for y in range(height)
+    ])
     gradient = gradient.resize(car.size)
-    mask = ImageChops.multiply(gradient, _low_frequency_noise(car.size, cell=6))
-    cap_alpha = int(175 * strength)
-    alpha = mask.point(lambda p, a=cap_alpha: int(a * p / 255))
-    alpha = ImageChops.multiply(alpha, car.getchannel("A"))
-    cap = Image.new("RGBA", car.size, (240, 244, 252, 0))
+    speck = noise.point(lambda p: 255 if p > 48 else 0)
+    cover = ImageChops.multiply(ImageChops.multiply(gradient, noise), speck)
+    cap_alpha = int(165 * strength)
+    alpha = cover.point(lambda p, a=cap_alpha: int(a * p / 255))
+
+    silhouette = car.getchannel("A")
+    rim = ImageChops.subtract(silhouette, silhouette.filter(ImageFilter.MinFilter(3)))
+    upper = Image.new("L", car.size, 0)
+    ImageDraw.Draw(upper).rectangle((0, 0, width, int(height * 0.62)), fill=255)
+    rim = ImageChops.multiply(rim, upper)
+    rim = rim.point(lambda p, a=int(220 * strength): min(255, int(a * p / 255)))
+    alpha = ImageChops.lighter(alpha, rim)
+    alpha = ImageChops.multiply(alpha, silhouette)
+    cap = Image.new("RGBA", car.size, (246, 248, 252, 0))
     cap.putalpha(alpha)
     return Image.alpha_composite(car, cap)
 
