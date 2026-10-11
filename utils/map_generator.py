@@ -1,8 +1,9 @@
 import asyncio
+import math
 import random
 from datetime import date
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
@@ -11,6 +12,15 @@ from utils.cars_generator import get_car, draw_car_with_shadow, cars_count
 from utils.weather_generator import make_sun_glare_layer, make_rain_layer, get_clouds_layer, add_snow, \
     LIGHTNING_CHANCE, make_snow_cover_layer, make_winter_tint, frost_car, make_sun_warmth_layer, \
     make_fog_layer
+
+SPOT_HEIGHT = 90
+SPOT_WIDTH = 46
+SPOT_LABEL_FONT_SIZE = 28
+
+# Визуальные места очереди вдоль нижнего края дороги map3.png (не места из БД).
+QUEUE_SPOT_COUNT = 13
+QUEUE_SPOT_X = 151
+QUEUE_SPOT_Y = 1510
 
 # Цвета для разных статусов
 COLORS = {
@@ -32,31 +42,68 @@ COLORS = {
 }
 
 GARBAGE_TRUCK_CAR_INDEX = 32
-GARBAGE_TRUCK_STEP = 70
+GARBAGE_TRUCK_STEP = 20
+GARBAGE_TRUCK_TURN_CUT = 24
 
-# Опорные точки (x, y, угол): между ними кадры добавляются с шагом GARBAGE_TRUCK_STEP
-GARBAGE_TRUCK_APPROACH = [(1030, 610, 45), (1020, 510, 10), (980, 480, 90), (200, 470, 90),
-                          (110, 450, 45), (117, 370, 0), (125, 180, -20), (130, 175, 270)]
-# Манёвры у мусорки: точки ближе шага, вставляются без уплотнения
-GARBAGE_TRUCK_PAUSE = [(265, 170, 268), (130, 175, 270), (145, 170, 270), (130, 170, 270), (135, 170, 270)]
-GARBAGE_TRUCK_DEPARTURE = [(135, 170, 270), (980, 215, 270), (1030, 245, 180), (1042, 610, 180), (1042, 700, 180)]
+# Координаты центров машины непосредственно на map3.png; начало и конец — за картой.
+GARBAGE_TRUCK_ROUTE = (
+    (1000, 1425), (850, 1425), (140, 1425), (75, 1380),
+    (85, 1100), (160, 1082), (340, 1060), (336, 833),
+    (340, 300), (400, 270), (605, 270), (637, 334),
+    (610, 404), (607, 1062), (557, 1103), (137, 1100),
+    (80, 1138), (80, 1400), (170, 1420), (700, 1425),
+    (1000, 1425),
+)
 
 
 def _interpolate_route(points, step):
-    frames = [points[0]]
-    for (x1, y1, a1), (x2, y2, a2) in zip(points, points[1:]):
-        count = max(1, round(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 / step))
-        da = (a2 - a1 + 180) % 360 - 180
-        for i in range(1, count + 1):
-            t = i / count
-            frames.append((round(x1 + (x2 - x1) * t), round(y1 + (y2 - y1) * t), round(a1 + da * t)))
+    """Прямые с квадратичным скруглением углов; направление берётся из траектории."""
+    path = [points[0]]
+
+    def line_to(target):
+        start = path[-1]
+        count = max(1, math.ceil(math.dist(start, target) / step))
+        for index in range(1, count + 1):
+            t = index / count
+            path.append((start[0] + (target[0] - start[0]) * t,
+                         start[1] + (target[1] - start[1]) * t))
+
+    for previous, corner, following in zip(points, points[1:], points[2:]):
+        incoming_length = math.dist(previous, corner)
+        outgoing_length = math.dist(corner, following)
+        if not incoming_length or not outgoing_length:
+            line_to(corner)
+            continue
+        incoming = ((corner[0] - previous[0]) / incoming_length,
+                    (corner[1] - previous[1]) / incoming_length)
+        outgoing = ((following[0] - corner[0]) / outgoing_length,
+                    (following[1] - corner[1]) / outgoing_length)
+        # Не добавляем лишних кривых на почти прямой дороге.
+        if incoming[0] * outgoing[0] + incoming[1] * outgoing[1] > 0.999:
+            line_to(corner)
+            continue
+        cut = min(GARBAGE_TRUCK_TURN_CUT, incoming_length / 3, outgoing_length / 3)
+        approach = (corner[0] - incoming[0] * cut, corner[1] - incoming[1] * cut)
+        departure = (corner[0] + outgoing[0] * cut, corner[1] + outgoing[1] * cut)
+        line_to(approach)
+        count = max(2, math.ceil(2 * cut / step))
+        for index in range(1, count + 1):
+            t = index / count
+            path.append(((1 - t) ** 2 * approach[0] + 2 * (1 - t) * t * corner[0] + t ** 2 * departure[0],
+                         (1 - t) ** 2 * approach[1] + 2 * (1 - t) * t * corner[1] + t ** 2 * departure[1]))
+    line_to(points[-1])
+
+    frames = []
+    for index, (x, y) in enumerate(path):
+        before = path[max(0, index - 1)]
+        after = path[min(len(path) - 1, index + 1)]
+        # Исходный вертикальный спрайт смотрит вверх; Pillow поворачивает против часовой стрелки.
+        angle = math.degrees(math.atan2(before[0] - after[0], before[1] - after[1]))
+        frames.append((round(x), round(y), angle))
     return frames
 
 
-garbage_truck_frames = ([(-1000, -1000, 0)] * 3
-                        + _interpolate_route(GARBAGE_TRUCK_APPROACH, GARBAGE_TRUCK_STEP)
-                        + GARBAGE_TRUCK_PAUSE
-                        + _interpolate_route(GARBAGE_TRUCK_DEPARTURE, GARBAGE_TRUCK_STEP)[1:])
+garbage_truck_frames = _interpolate_route(GARBAGE_TRUCK_ROUTE, GARBAGE_TRUCK_STEP)
 
 SNOWMAN_BOXES = [
     (20, 30, 128, 163),
@@ -71,49 +118,97 @@ dx = 0
 dy = 0
 d_width = -1
 
-# Пиксели parking_r.png (1111x650). Проезды: две колеи вдоль длинной стороны
+
+def _rotate_point(x, y):
+    # map3: повернутая парковка занимает область примерно x=220..790,
+    # y=170..1100. Эти коэффициенты привязывают прежнюю схему к асфальту.
+    return round(200 + y * .9), round(170 + (1111 - x) * .85)
+
+
+def _rotate_box(box):
+    x1, y1, x2, y2 = box
+    a = _rotate_point(x1, y1)
+    b = _rotate_point(x2, y2)
+    return min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
+
+
+# Геометрия новой подложки map3.png (941x1672). Подложка представляет ту же
+# парковку, повернутую на 90 градусов, с домом сверху и дорогой снизу.
 PARKING_LANES = [
-    (122, 222, 1083, 268),  # между 52-64 и 35-51
-    (122, 471, 1083, 518),  # между 18-34 и 1-17
-    (122, 222, 168, 518),  # левый, вдоль 69-74
-    (1041, 25, 1083, 650),  # правый, к въезду
+    _rotate_box(box) for box in (
+        (122, 222, 1083, 268), (122, 471, 1083, 518),
+        (122, 222, 168, 518), (1041, 25, 1083, 650))
 ]
 
 # Ряды мест: колея на них не рисуется
 PARKING_SPOT_AREAS = [
-    (120, 520, 987, 620),  # 1-17
-    (171, 371, 1038, 469),  # 18-34
-    (171, 270, 1038, 371),  # 35-51
-    (374, 119, 1036, 220),  # 52-64
-    (15, 170, 119, 520),  # 69-74
-    (425, 20, 1036, 119),  # 65-68
+    (230, 250, 320, 960),
+    (370, 290, 460, 1000),
+    (460, 290, 550, 1000),
+    (601, 460, 691, 1000),
+    (691, 514, 737, 643),
+    (788, 643, 834, 1030),
+    (322, 171, 599, 256),
 ]
 
 SNOWFALL_MULTIPLIER = 2.0
 FROST_SNOW_MULTIPLIER = 1.3
 
 RANDOM_CARS_EXTRA_MAX = 3
-RANDOM_CARS_EXCLUDED = set(range(65, 69))
+RANDOM_CARS_EXCLUDED = set()
 
 
 def get_spot_layout(spot_id: int):
-    """(x, y, car_x, car_y, car_rotate) по подложке parking_r.png или None."""
+    """(x, y, car_x, car_y, car_rotate) по подложке map3.png."""
     if 1 <= spot_id <= 17:
-        x, y = 120 + (spot_id - 1) * 51, 520
-        return x, y, x + 2, y + 14, 0
-    if 18 <= spot_id <= 34:
-        x, y = 171 + (spot_id - 18) * 51, 371
-        return x, y, x + 2, y + 3, 180
-    if 35 <= spot_id <= 51:
-        x, y = 171 + (spot_id - 35) * 51, 270
-        return x, y, x + 2, y + 14, 0
-    if 52 <= spot_id <= 64:
-        x, y = 374 + (spot_id - 52) * 51, 119
-        return x, y, x + 2, y + 3, 180
-    if 69 <= spot_id <= 74:
-        x, y = 17, 220 + (74 - spot_id) * 50
-        return x, y, x + 2, y + 2, -90
-    return None
+        x, y, angle = 207, 256 + (spot_id - 1) * SPOT_WIDTH, 90
+    elif 18 <= spot_id <= 34:
+        x, y, angle = 390, 299 + (spot_id - 18) * SPOT_WIDTH, 270
+    elif 35 <= spot_id <= 51:
+        x, y, angle = 390 + SPOT_HEIGHT, 299 + (spot_id - 35) * SPOT_WIDTH, 90
+    elif 52 <= spot_id <= 64:
+        x, y, angle = 667, 415 + (spot_id - 52) * SPOT_WIDTH, 270
+    elif spot_id == 65:
+        # Длинное место примыкает сбоку к обычным местам 53–55.
+        return 759, 545, 763, 562, 180
+    elif 66 <= spot_id <= 68:
+        first_y = 686
+        step = 126
+        y = round(first_y + (spot_id - 66) * step)
+        return 810, y, 815, y + 16, 180
+    elif 69 <= spot_id <= 74:
+        # Верхний ряд
+        first_x = 321
+        last_x = 545
+        step = (last_x - first_x) / 5
+        x = round(first_x + (spot_id - 69) * step)
+        # Верхний ряд мест находится над основными рядами парковки.
+        y, angle = 160, 180
+    else:
+        return None
+    return x, y, x + 5, y + 4, angle
+
+
+def _draw_queue_spot_markings(overlay):
+    """Восемь смежных мест без номеров, открытых со стороны дороги сверху."""
+    draw = ImageDraw.Draw(overlay)
+    left = dx + QUEUE_SPOT_X
+    top = dy + QUEUE_SPOT_Y
+    right = left + QUEUE_SPOT_COUNT * SPOT_WIDTH
+    color = (245, 245, 245, 190)
+    draw.line((left, top + SPOT_HEIGHT, right, top + SPOT_HEIGHT), fill=color, width=2)
+    for index in range(QUEUE_SPOT_COUNT + 1):
+        x = left + index * SPOT_WIDTH
+        draw.line((x, top, x, top + SPOT_HEIGHT), fill=color, width=2)
+
+
+def _queue_cars(queue_entries):
+    """Координаты и машины первых водителей очереди слева направо."""
+    for index, entry in enumerate(queue_entries[:QUEUE_SPOT_COUNT]):
+        driver = entry.driver
+        car_index = (driver.attributes or {}).get("car_index", driver.id % cars_count)
+        x = QUEUE_SPOT_X + index * SPOT_WIDTH
+        yield car_index, x + (SPOT_WIDTH - 40) // 2, QUEUE_SPOT_Y + (SPOT_HEIGHT - 80) // 2, 0
 
 
 def _shows_driver_car(spot, use_spot_status):
@@ -157,9 +252,15 @@ def _winter_strength(temp, weather):
     return 0
 
 snowman_img = Image.open("./pics/snowman.png").convert("RGBA")
-parking_img = Image.open("./pics/parking_r.png")
+parking_img = Image.open("./pics/map3.png").convert("RGBA")
 
-regular_font = ImageFont.load_default(60)
+try:
+    temperature_font = ImageFont.truetype("arialbd.ttf", 68)
+except OSError:
+    try:
+        temperature_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 68)
+    except OSError:
+        temperature_font = ImageFont.load_default(68)
 try:
     emoji_font = ImageFont.truetype("./pics/NotoColorEmoji.ttf", 109)
 except Exception as e:
@@ -174,7 +275,9 @@ async def generate_parking_map(parking_spots,
                                frame_index: int = None,
                                day: date = None,
                                is_test: bool = False,
-                               weather_override: tuple = None):
+                               weather_override: tuple = None,
+                               labels_above_cars: bool = False,
+                               queue_entries=None):
     overlay = Image.new("RGBA", parking_img.size, (0, 0, 0, 0))
     if weather_override is not None:
         temp, weather, desc = weather_override
@@ -186,7 +289,11 @@ async def generate_parking_map(parking_spots,
     winter_strength = _winter_strength(temp, weather)
     # Солнце рисуем вначале, дождь, снег и туман — в конце
     if sun_alpha > 0:
-        sun_layer = make_sun_glare_layer((overlay.width, overlay.height), max_alpha=sun_alpha)
+        sun_layer = make_sun_glare_layer(
+            (overlay.width, overlay.height),
+            center=(overlay.width * .15, overlay.height * .82),
+            max_alpha=sun_alpha,
+        )
         overlay = Image.alpha_composite(overlay, sun_layer)
         if winter_strength == 0:
             overlay = Image.alpha_composite(overlay, make_sun_warmth_layer(parking_img))
@@ -195,10 +302,10 @@ async def generate_parking_map(parking_spots,
         overlay = Image.alpha_composite(
             overlay, make_snow_cover_layer(parking_img, winter_strength, PARKING_LANES, PARKING_SPOT_AREAS))
 
+    parked_cars = []
     for spot_id in _random_car_spots(parking_spots, use_spot_status):
         _, _, car_x, car_y, car_rotate = get_spot_layout(spot_id)
-        _draw_parked_car(overlay, random.randrange(cars_count), car_x, car_y, car_rotate,
-                         winter_strength, sun_alpha)
+        parked_cars.append((random.randrange(cars_count), car_x, car_y, car_rotate))
 
     # Отрисовка всех мест с учетом статусов
     for spot in parking_spots:
@@ -216,18 +323,30 @@ async def generate_parking_map(parking_spots,
             else:
                 car_index = spot.current_driver_id % cars_count
 
-            _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha)
+            parked_cars.append((car_index, car_x, car_y, car_rotate))
         else:
             # Создаем паттерн с диагональными полосами
-            pattern = create_diagonal_pattern(spot.width + d_width, spot.height,
+            w, h = _spot_size(spot.id) if layout is not None else (spot.width + d_width, spot.height)
+            pattern = create_diagonal_pattern(w, h,
                                               stripe_width=4,
                                               color2=COLORS[status],
                                               color1=(0, 0, 0, 0))
             # Вставляем паттерн в прямоугольник
             overlay.paste(pattern, (dx + x, dy + y), pattern)
 
-    if frame_index:
-        await add_garbage_truck(frame_index, overlay)
+    if not labels_above_cars:
+        _draw_spot_labels(overlay)
+    _draw_spot_markings(overlay)
+    _draw_queue_spot_markings(overlay)
+    parked_cars.extend(_queue_cars(list(queue_entries or ())))
+    for car_index, car_x, car_y, car_rotate in parked_cars:
+        _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha)
+
+    if labels_above_cars:
+        _draw_spot_labels(overlay)
+
+    if frame_index is not None:
+        await add_garbage_truck(frame_index, overlay, winter_strength, sun_alpha)
 
     # Снеговик под облаками, хлопья и дождь — поверх
     rain_drop_count = weather.get("rain_drop_count", 0)
@@ -265,14 +384,127 @@ async def generate_parking_map(parking_spots,
     if is_fog:
         overlay = Image.alpha_composite(overlay, make_fog_layer(overlay.size))
 
-    # Добавляем текст
-    draw = ImageDraw.Draw(overlay)
-    draw.text((17, 80), text=temp, font=regular_font, fill=COLORS['text'])
-    draw.text((140, 57), text=weather.get("icon", ''), font=emoji_font, embedded_color=True)
+    # Температура и значок остаются читаемыми поверх любых погодных эффектов.
+    _draw_temperature(overlay, temp, weather.get("icon", ""))
 
     result = Image.alpha_composite(parking_img, overlay)
 
     return result
+
+
+def _draw_temperature(overlay, temp, icon):
+    draw = ImageDraw.Draw(overlay)
+    text = str(temp or "").strip()
+    icon_x = 125
+    if text:
+        text_x, text_y = 28, 35
+        draw.text(
+            (text_x, text_y), text, font=temperature_font,
+            fill=(255, 255, 255, 255),
+            stroke_width=3, stroke_fill=(24, 28, 32, 255),
+        )
+        bbox = draw.textbbox((text_x, text_y), text, font=temperature_font, stroke_width=3)
+        icon_x = max(icon_x, bbox[2] + 16)
+    if icon:
+        draw.text((icon_x, 25), text=icon, font=emoji_font, embedded_color=True)
+
+
+def _draw_spot_markings(overlay):
+    """Рисует светлую разметку всех 74 мест."""
+    draw = ImageDraw.Draw(overlay)
+    for spot_id in range(1, 75):
+        layout = get_spot_layout(spot_id)
+        if layout is None:
+            continue
+        x, y, car_x, car_y, car_rotate = layout
+        w, h = _spot_size(spot_id)
+        _draw_spot_edges(draw, spot_id, x, y, w, h)
+
+
+def _draw_spot_labels(overlay):
+    draw = ImageDraw.Draw(overlay)
+    for font_name in ("arialbd.ttf", "DejaVuSans-Bold.ttf"):
+        try:
+            font = ImageFont.truetype(font_name, SPOT_LABEL_FONT_SIZE)
+            break
+        except OSError:
+            font = ImageFont.load_default(SPOT_LABEL_FONT_SIZE)
+
+    for spot_id in range(1, 75):
+        layout = get_spot_layout(spot_id)
+        if layout is None:
+            continue
+        x, y, *_ = layout
+        w, h = _spot_size(spot_id)
+        text = str(spot_id)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = x + (w - text_width) / 2
+        text_y = y + (h - text_height) / 2 - 1
+
+        # Контрастная обводка сохраняет читаемость номера и на машине, и на фоне.
+        for offset_x, offset_y in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            draw.text(
+                (text_x + offset_x, text_y + offset_y),
+                text,
+                font=font,
+                fill=(24, 28, 32, 255),
+            )
+        draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255, 255))
+
+
+def _spot_size(spot_id):
+    if spot_id == 65:
+        return SPOT_WIDTH, 129
+    if 66 <= spot_id <= 68:
+        return SPOT_WIDTH, 129
+    if 69 <= spot_id < 74:
+        return get_spot_layout(spot_id + 1)[0] - get_spot_layout(spot_id)[0], 83
+    return (SPOT_WIDTH, 83) if spot_id == 74 else (SPOT_HEIGHT, SPOT_WIDTH)
+
+
+def _spot_opening(spot_id):
+    """Сторона, с которой машина заезжает в карман."""
+    if spot_id == 65:
+        return "bottom"
+    if 1 <= spot_id <= 17 or 35 <= spot_id <= 51:
+        return "right"
+    if 18 <= spot_id <= 34 or 52 <= spot_id <= 68:
+        return "left"
+    return "bottom"
+
+
+def _draw_spot_edges(draw, spot_id, x, y, w, h):
+    """Рисует грани серии смежных мест один раз, без щелей и двойных швов."""
+    color = (245, 245, 245, 190)
+    width = 2
+    if 65 <= spot_id <= 68:
+        draw.line((x, y, x + w, y), fill=color, width=width)
+        # draw.line((x, y, x, y + h), fill=color, width=width)
+        draw.line((x + w, y, x + w, y + h), fill=color, width=width)
+        if spot_id == 68:
+            draw.line((x + w, y + h, x, y + h), fill=color, width=width)
+        return
+
+    if 69 <= spot_id <= 74:
+        index = spot_id - 69
+        # Верхний ряд открыт снизу; внутренние грани рисуются по одному разу.
+        if index == 0:
+            draw.line((x, y + h, x, y), fill=color, width=width)
+        draw.line((x + w, y, x + w, y + h), fill=color, width=width)
+        draw.line((x, y, x + w, y), fill=color, width=width)
+        return
+
+    # Вертикальные места объединены в колонны: горизонтальную общую грань
+    # каждого соседнего места рисуем только со стороны нижнего места.
+    if _spot_opening(spot_id) != "left":
+        draw.line((x, y + h, x, y), fill=color, width=width)
+    if _spot_opening(spot_id) != "right":
+        draw.line((x + w, y, x + w, y + h), fill=color, width=width)
+    draw.line((x, y, x + w, y), fill=color, width=width)
+    if spot_id in (17, 34, 51, 64):
+        draw.line((x + w, y + h, x, y + h), fill=color, width=width)
 
 
 def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha):
@@ -285,12 +517,7 @@ def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_streng
     car_image = car_image.rotate(car_rotate, expand=True)
     if winter_strength > 0:
         car_image = frost_car(car_image, winter_strength)
-    if sun_alpha > 0:
-        # Короткий сдвиг: длинная тень выглядит так, будто машина висит над землёй
-        shadow_dx, shadow_dy = ((2, 2) if winter_strength > 0 else (3, 2))
-        shadow_blur = 3 if winter_strength > 0 else 4
-    else:
-        shadow_dx, shadow_dy, shadow_blur = 5, 5, 10
+    shadow_dx, shadow_dy, shadow_blur = _car_shadow_settings(winter_strength, sun_alpha)
     draw_car_with_shadow(
         car_image,
         overlay,
@@ -300,6 +527,13 @@ def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_streng
         shadow_dy=shadow_dy,
         blur_radius=shadow_blur,
     )
+
+
+def _car_shadow_settings(winter_strength, sun_alpha):
+    if sun_alpha > 0:
+        # Короткий сдвиг: длинная тень выглядит так, будто машина висит над землёй.
+        return (2, -2, 3) if winter_strength > 0 else (4, -5, 4)
+    return 7, -7, 10
 
 
 async def add_snowman(overlay):
@@ -314,8 +548,7 @@ async def add_snowman(overlay):
 
     snow_w, snow_h = snowman.size
 
-    target_center_x = 380
-    target_bottom_y = 118
+    target_center_x, target_bottom_y = (130, 830)
 
     paste_x = int(target_center_x - snow_w / 2)
     paste_y = int(target_bottom_y - snow_h)
@@ -326,24 +559,17 @@ async def add_snowman(overlay):
     return overlay
 
 
-async def add_garbage_truck(frame_index, overlay):
-    # Рисуем мусорку
+async def add_garbage_truck(frame_index, overlay, winter_strength=0, sun_alpha=0):
     garbage_truck = get_car(GARBAGE_TRUCK_CAR_INDEX)
     frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
     garbage_truck = garbage_truck.rotate(frame[2], expand=True)
-    pos = (dx + frame[0] + random.randint(-5, 5), dy + frame[1] + random.randint(0, 5))
-    # Создаем тень
-    shadow = Image.new("RGBA", garbage_truck.size, (0, 0, 0, 0))
-    shadow.putalpha(garbage_truck.split()[3])
-    shadow = ImageOps.colorize(shadow.convert("L"), black="black", white="black")
-    shadow.putalpha(garbage_truck.split()[3])
-    blur_radius = 10  # радиус размытия тени
-    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
-    # Смещаем тень относительно машины
-    shadow_position = (pos[0] + 8, pos[1] + 8)
-    # Накладываем тень
-    overlay.paste(shadow, shadow_position, mask=garbage_truck)
-    overlay.paste(garbage_truck, pos, mask=garbage_truck)
+    pos = (round(dx + frame[0] - garbage_truck.width / 2),
+           round(dy + frame[1] - garbage_truck.height / 2))
+    shadow_dx, shadow_dy, shadow_blur = _car_shadow_settings(winter_strength, sun_alpha)
+    draw_car_with_shadow(
+        garbage_truck, overlay, *pos,
+        shadow_dx=shadow_dx, shadow_dy=shadow_dy, blur_radius=shadow_blur,
+    )
 
 
 def get_status(driver: Driver, reservations_data, spot: ParkingSpot, use_spot_status: bool):

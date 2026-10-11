@@ -33,7 +33,8 @@ router = Router()
                 flags={"long_operation": "upload_photo", "check_driver": True})
 async def map_command(message: Message, session, driver, current_day, is_private):
     frame_index = await get_frame_index(message, session)
-    rich_message, builder = await build_map_message(session, driver, current_day, is_private, frame_index)
+    rich_message, builder = await build_map_message(
+        session, driver, current_day, is_private, frame_index, labels_above_cars=False)
     await message.answer_rich(rich_message=rich_message, reply_markup=builder.as_markup())
 
 
@@ -45,21 +46,40 @@ async def refresh_map(callback: CallbackQuery, callback_data: MyCallback, sessio
         return
     await callback.answer()
     rich_message, builder = await build_map_message(session, driver, current_day, is_private,
-                                                    callback_data.spot_id)
+                                                    callback_data.spot_id,
+                                                    labels_above_cars=bool(callback_data.bool_value))
     await callback.message.edit_text(rich_message=rich_message, reply_markup=builder.as_markup())
 
 
-async def build_map_message(session, driver, current_day, is_private, frame_index):
+@router.callback_query(MyCallback.filter(F.action == "toggle-map-labels"),
+                       flags={"long_operation": "upload_photo", "check_driver": True})
+async def toggle_map_labels(callback: CallbackQuery, callback_data: MyCallback,
+                            session, driver, current_day, is_private):
+    if current_day.toordinal() != callback_data.day_num:
+        await send_alarm(callback, "Старая карта, переключить режим не удастся 🏛️")
+        return
+    await callback.answer()
+    rich_message, builder = await build_map_message(
+        session, driver, current_day, is_private, callback_data.spot_id,
+        labels_above_cars=not bool(callback_data.bool_value))
+    await callback.message.edit_text(rich_message=rich_message, reply_markup=builder.as_markup())
+
+
+async def build_map_message(session, driver, current_day, is_private, frame_index,
+                            labels_above_cars: bool = False):
     parking_service = ParkingService(session)
     spots, reservations = await parking_service.get_spots_with_reservations(current_day)
     for spot in spots:
         await session.refresh(spot, ["current_driver"])
+    queue_all = list(await QueueService(session).get_all())
     img = await generate_parking_map(
         parking_spots=spots,
         reservations_data=reservations,
         driver=driver if is_private else None,
         frame_index=frame_index,
-        day=current_day
+        day=current_day,
+        labels_above_cars=labels_above_cars,
+        queue_entries=queue_all,
     )
 
     img_buffer = BytesIO()
@@ -69,14 +89,22 @@ async def build_map_message(session, driver, current_day, is_private, frame_inde
     if is_private:
         add_button("📅 Расписание...", "edit-schedule", driver.chat_id, builder)
 
-    queue_all = await QueueService(session).get_all()
-
     refresh_button = RichTextButton(
         button=RichMessageButton(
             text="Обновить",
             callback_data=MyCallback(action="refresh-map", user_id=0, spot_id=frame_index,
                                      day_num=current_day.toordinal(), event_type=None,
-                                     bool_value=None).pack(),
+                                     bool_value=labels_above_cars).pack(),
+            style="link",
+        )
+    )
+    labels_button = RichTextButton(
+        button=RichMessageButton(
+            text="Номера: над машинами" if labels_above_cars else "Номера: под машинами",
+            callback_data=MyCallback(
+                action="toggle-map-labels", user_id=0, spot_id=frame_index,
+                day_num=current_day.toordinal(), event_type=None,
+                bool_value=labels_above_cars).pack(),
             style="link",
         )
     )
@@ -96,6 +124,8 @@ async def build_map_message(session, driver, current_day, is_private, frame_inde
             InputRichBlockParagraph(text=[
                 f"(Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M')}) ",
                 refresh_button,
+                "\n",
+                labels_button,
             ]),
             InputRichBlockParagraph(text=legend),
             InputRichBlockParagraph(text=queue_text.rstrip("\n")),

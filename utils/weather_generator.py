@@ -570,7 +570,14 @@ async def generate_weather_samples(output_dir: str = "pics/temp") -> None:
             current_driver_id=index + 1 + random.randint(0, 50),
             current_driver=None,
         )
-        for index, spot_id in enumerate((3, 8, 14, 22, 30, 40, 46, 74))
+        for index, spot_id in enumerate((3, 8, 14, 22, 30, 40, 46, 74, 2, 2, 4, 4, 52, 52, 68, 68, 66, 66, 65, 65))
+    ]
+    queue_entries = [
+        SimpleNamespace(
+            driver=SimpleNamespace(id=index + 1, attributes={"car_index": car_index}),
+            spot_id=None,
+        )
+        for index, car_index in enumerate((5, 18, 42))
     ]
 
     samples = []
@@ -589,6 +596,8 @@ async def generate_weather_samples(output_dir: str = "pics/temp") -> None:
             None,
             None,
             weather_override=(temp, weather, code),
+            labels_above_cars=False,
+            queue_entries=queue_entries,
         )
         path = os.path.join(output_dir, f"weather_{code}.png")
         img.save(path)
