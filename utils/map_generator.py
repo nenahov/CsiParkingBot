@@ -1,9 +1,10 @@
 import asyncio
+import hashlib
 import math
 import random
 from datetime import date
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 from models.driver import Driver
 from models.parking_spot import ParkingSpot, SpotStatus
@@ -132,24 +133,14 @@ def _rotate_box(box):
     return min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
 
 
-# Геометрия новой подложки map3.png (941x1672). Подложка представляет ту же
-# парковку, повернутую на 90 градусов, с домом сверху и дорогой снизу.
-PARKING_LANES = [
-    _rotate_box(box) for box in (
-        (122, 222, 1083, 268), (122, 471, 1083, 518),
-        (122, 222, 168, 518), (1041, 25, 1083, 650))
-]
+# Зимние колеи идут по фактической траектории движения на map3.png.
+# Старые прямоугольные полосы были привязаны к parking_r.png и после замены
+# подложки заметно «уезжали» на парковочные места и декоративные объекты.
+PARKING_LANES = (GARBAGE_TRUCK_ROUTE,)
 
-# Ряды мест: колея на них не рисуется
-PARKING_SPOT_AREAS = [
-    (230, 250, 320, 960),
-    (370, 290, 460, 1000),
-    (460, 290, 550, 1000),
-    (601, 460, 691, 1000),
-    (691, 514, 737, 643),
-    (788, 643, 834, 1030),
-    (322, 171, 599, 256),
-]
+# Оставлено для совместимости с внешними импортами. Реальные зоны
+# исключения строятся из актуальной раскладки мест в _winter_keep_out_areas().
+PARKING_SPOT_AREAS = ()
 
 SNOWFALL_MULTIPLIER = 2.0
 FROST_SNOW_MULTIPLIER = 1.3
@@ -187,6 +178,67 @@ def get_spot_layout(spot_id: int):
     else:
         return None
     return x, y, x + 5, y + 4, angle
+
+
+def _winter_keep_out_areas():
+    """Прямоугольники парковочных мест в координатах map3.png.
+
+    Колеи могут проходить рядом с рядами мест, но не должны затемнять
+    разметку/номера и рисовать две дополнительные полосы поверх машин.
+    Раскладка берётся из get_spot_layout(), поэтому больше не дублирует
+    старую геометрию парковки.
+    """
+    areas = []
+    for spot_id in range(1, 75):
+        layout = get_spot_layout(spot_id)
+        if layout is None:
+            continue
+        x, y, *_ = layout
+        width, height = _spot_size(spot_id)
+        padding = 3
+        areas.append((
+            max(0, x - padding),
+            max(0, y - padding),
+            min(parking_img.width, x + width + padding),
+            min(parking_img.height, y + height + padding),
+        ))
+    return areas
+
+
+def _winter_surface_mask():
+    """Mask the drivable/parking surface of map3.png.
+
+    The luminance check in weather_generator still follows the painted
+    asphalt edges, while this mask prevents similarly dark roofs, trees and
+    decorations elsewhere on the new illustrated map from being snowed over.
+    """
+    mask = Image.new("L", parking_img.size, 0)
+    draw = ImageDraw.Draw(mask)
+
+    # Main roads, including the lower queue road and the left access road.
+    draw.line(GARBAGE_TRUCK_ROUTE, fill=255, width=138, joint="curve")
+    draw.rectangle((0, 1360, parking_img.width, 1635), fill=255)
+
+    # Parking bays are snow-covered too; only the rut layer excludes them.
+    for x0, y0, x1, y1 in _winter_keep_out_areas():
+        draw.rectangle((x0 - 5, y0 - 5, x1 + 5, y1 + 5), fill=255)
+
+    return mask.filter(ImageFilter.GaussianBlur(3))
+
+
+def _weather_static_seed(temp, weather, desc):
+    """Stable seed for surface snow and frost.
+
+    A new map request must not reshuffle the snow texture or the frost on
+    cars. Falling snow gets a separate frame-dependent seed below.
+    """
+    weather_values = sorted(
+        (key, value)
+        for key, value in weather.items()
+        if not key.startswith("debug_")
+    )
+    payload = f"{temp}|{desc}|{weather_values}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
 
 
 def _draw_queue_spot_markings(overlay):
@@ -287,6 +339,7 @@ async def generate_parking_map(parking_spots,
         temp, weather, desc = await WeatherService().get_weather_test(day)
     sun_alpha = weather.get("sun_alpha", 0)
     winter_strength = _winter_strength(temp, weather)
+    static_seed = _weather_static_seed(temp, weather, desc)
     # Солнце рисуем вначале, дождь, снег и туман — в конце
     if sun_alpha > 0:
         sun_layer = make_sun_glare_layer(
@@ -300,7 +353,20 @@ async def generate_parking_map(parking_spots,
 
     if winter_strength > 0:
         overlay = Image.alpha_composite(
-            overlay, make_snow_cover_layer(parking_img, winter_strength, PARKING_LANES, PARKING_SPOT_AREAS))
+            overlay,
+            make_snow_cover_layer(
+                parking_img,
+                winter_strength,
+                PARKING_LANES,
+                _winter_keep_out_areas(),
+                seed=static_seed,
+                surface_mask=_winter_surface_mask(),
+                debug_dir=(
+                        weather.get("debug_winter_masks_dir")
+                        or ("pics/temp" if weather.get("debug_winter_masks") else None)
+                ),
+            ),
+        )
 
     parked_cars = []
     for spot_id in _random_car_spots(parking_spots, use_spot_status):
@@ -340,19 +406,39 @@ async def generate_parking_map(parking_spots,
     _draw_queue_spot_markings(overlay)
     parked_cars.extend(_queue_cars(list(queue_entries or ())))
     for car_index, car_x, car_y, car_rotate in parked_cars:
-        _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha)
+        _draw_parked_car(
+            overlay,
+            car_index,
+            car_x,
+            car_y,
+            car_rotate,
+            winter_strength,
+            sun_alpha,
+            frost_seed=static_seed + car_index * 1000003 + car_x * 101 + car_y,
+        )
 
     if labels_above_cars:
         _draw_spot_labels(overlay)
 
     if frame_index is not None:
-        await add_garbage_truck(frame_index, overlay, winter_strength, sun_alpha)
+        await add_garbage_truck(
+            frame_index,
+            overlay,
+            winter_strength,
+            sun_alpha,
+            frost_seed=static_seed + GARBAGE_TRUCK_CAR_INDEX,
+        )
 
     # Снеговик под облаками, хлопья и дождь — поверх
     rain_drop_count = weather.get("rain_drop_count", 0)
     snow_count = weather.get("snow_count", 0)
+    dynamic_seed = (
+        None
+        if frame_index is None
+        else static_seed + frame_index * 1009
+    )
     if snow_count > 0:
-        overlay = await add_snowman(overlay)
+        overlay = await add_snowman(overlay, seed=static_seed)
 
     is_fog = bool(
         weather.get("fog")
@@ -368,9 +454,13 @@ async def generate_parking_map(parking_spots,
 
     if rain_drop_count > 0 and "-" in temp:
         overlay = add_snow(overlay, snow_count=int(rain_drop_count * FROST_SNOW_MULTIPLIER),
-                           snow_size_range=(2, 3))
+                           snow_size_range=(2, 3), seed=dynamic_seed)
     if snow_count > 0:
-        overlay = add_snow(overlay, snow_count=int(snow_count * SNOWFALL_MULTIPLIER))
+        overlay = add_snow(
+            overlay,
+            snow_count=int(snow_count * SNOWFALL_MULTIPLIER),
+            seed=None if dynamic_seed is None else dynamic_seed + 1,
+        )
 
     # Дождь поверх облаков, иначе облака его закрывают
     if rain_drop_count > 0 and "-" not in temp:
@@ -507,7 +597,16 @@ def _draw_spot_edges(draw, spot_id, x, y, w, h):
         draw.line((x + w, y + h, x, y + h), fill=color, width=width)
 
 
-def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_strength, sun_alpha):
+def _draw_parked_car(
+        overlay,
+        car_index,
+        car_x,
+        car_y,
+        car_rotate,
+        winter_strength,
+        sun_alpha,
+        frost_seed=None,
+):
     car_image = get_car(car_index)
 
     scale = 0.8
@@ -516,7 +615,7 @@ def _draw_parked_car(overlay, car_index, car_x, car_y, car_rotate, winter_streng
         car_image = car_image.resize(new_size)
     car_image = car_image.rotate(car_rotate, expand=True)
     if winter_strength > 0:
-        car_image = frost_car(car_image, winter_strength)
+        car_image = frost_car(car_image, winter_strength, seed=frost_seed)
     shadow_dx, shadow_dy, shadow_blur = _car_shadow_settings(winter_strength, sun_alpha)
     draw_car_with_shadow(
         car_image,
@@ -536,9 +635,9 @@ def _car_shadow_settings(winter_strength, sun_alpha):
     return 7, -7, 10
 
 
-async def add_snowman(overlay):
+async def add_snowman(overlay, seed=None):
     # Рисуем снеговика
-    index = random.randint(0, 5)
+    index = random.Random(seed).randint(0, 5)
     box = SNOWMAN_BOXES[index]
     snowman = snowman_img.crop(box)
     scale = 0.8
@@ -559,10 +658,18 @@ async def add_snowman(overlay):
     return overlay
 
 
-async def add_garbage_truck(frame_index, overlay, winter_strength=0, sun_alpha=0):
+async def add_garbage_truck(
+        frame_index,
+        overlay,
+        winter_strength=0,
+        sun_alpha=0,
+        frost_seed=None,
+):
     garbage_truck = get_car(GARBAGE_TRUCK_CAR_INDEX)
     frame = garbage_truck_frames[frame_index % len(garbage_truck_frames)]
     garbage_truck = garbage_truck.rotate(frame[2], expand=True)
+    if winter_strength > 0:
+        garbage_truck = frost_car(garbage_truck, winter_strength, seed=frost_seed)
     pos = (round(dx + frame[0] - garbage_truck.width / 2),
            round(dy + frame[1] - garbage_truck.height / 2))
     shadow_dx, shadow_dy, shadow_blur = _car_shadow_settings(winter_strength, sun_alpha)

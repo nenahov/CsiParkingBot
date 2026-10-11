@@ -1,4 +1,5 @@
 import math
+import os
 import random
 from typing import Union
 
@@ -316,9 +317,11 @@ def _draw_falling_snow_layer(
         trail_blur,
         wind,
         opacity_scale,
-        blur_scale
+        blur_scale,
+        rng=None,
 ):
     """Рисует каждую частицу один раз: отдельный след, затем компактную голову."""
+    rng = rng or random
     head_layer = Image.new("RGBA", image_size, (0, 0, 0, 0))
     trail_layer = Image.new("RGBA", image_size, (0, 0, 0, 0))
     heads = ImageDraw.Draw(head_layer)
@@ -326,15 +329,15 @@ def _draw_falling_snow_layer(
     w, h = image_size
 
     for _ in range(count):
-        x = random.uniform(-10, w + 10)
-        y = random.uniform(-10, h + 10)
-        flake_size = random.uniform(*flake_size_range) * random.uniform(*size_multiplier)
-        alpha = min(255, int(random.randint(*alpha_range) * opacity_scale))
-        particle_wind = wind + random.uniform(-0.06, 0.06)
+        x = rng.uniform(-10, w + 10)
+        y = rng.uniform(-10, h + 10)
+        flake_size = rng.uniform(*flake_size_range) * rng.uniform(*size_multiplier)
+        alpha = min(255, int(rng.randint(*alpha_range) * opacity_scale))
+        particle_wind = wind + rng.uniform(-0.06, 0.06)
 
         min_trail, max_trail = trail_length_range
         if max_trail > 0:
-            trail_length = random.uniform(min_trail, max_trail)
+            trail_length = rng.uniform(min_trail, max_trail)
             segments = 3
             line_width = max(1, round(flake_size * 0.22))
             for segment in range(segments):
@@ -351,8 +354,8 @@ def _draw_falling_snow_layer(
                     width=line_width,
                 )
 
-        rx = flake_size * random.uniform(0.55, 0.85)
-        ry = flake_size * random.uniform(0.70, 1.05)
+        rx = flake_size * rng.uniform(0.55, 0.85)
+        ry = flake_size * rng.uniform(0.70, 1.05)
         if max_trail > 0:
             heads.ellipse(
                 (x - rx - 1, y - ry - 1, x + rx + 1, y + ry + 1),
@@ -371,21 +374,55 @@ def _draw_falling_snow_layer(
     return Image.alpha_composite(trail_layer, head_layer)
 
 
-def _low_frequency_noise(size, cell=24):
+def _low_frequency_noise(size, cell=24, rng=None):
+    rng = rng or random
     width, height = size
     grid_w = max(2, width // cell)
     grid_h = max(2, height // cell)
     noise = Image.new("L", (grid_w, grid_h))
-    noise.putdata([random.randint(0, 255) for _ in range(grid_w * grid_h)])
+    noise.putdata([rng.randint(0, 255) for _ in range(grid_w * grid_h)])
     noise = noise.resize(size, Image.Resampling.BICUBIC)
     return noise.filter(ImageFilter.GaussianBlur(max(1, cell // 3)))
 
 
-def _draw_lane_ruts(size, lanes, strength):
+def _draw_polyline_ruts(draw, path, width, strength):
+    """Draw two soft tire tracks around a road centerline."""
+    if len(path) < 2:
+        return
+
+    points = [(float(x), float(y)) for x, y in path]
+    left = []
+    right = []
+    for index, (x, y) in enumerate(points):
+        before = points[max(0, index - 1)]
+        after = points[min(len(points) - 1, index + 1)]
+        tangent_x = after[0] - before[0]
+        tangent_y = after[1] - before[1]
+        length = math.hypot(tangent_x, tangent_y) or 1
+        normal_x = -tangent_y / length
+        normal_y = tangent_x / length
+        offset = 13
+        left.append((x + normal_x * offset, y + normal_y * offset))
+        right.append((x - normal_x * offset, y - normal_y * offset))
+
+    color = (150, 158, 170, int(105 * strength))
+    draw.line(left, fill=color, width=width, joint="curve")
+    draw.line(right, fill=color, width=width, joint="curve")
+
+
+def _draw_lane_ruts(size, lanes, strength, rng=None):
     layer = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
-    color = (150, 158, 170, int(110 * strength))
-    for x0, y0, x1, y1 in lanes:
+    rng = rng or random
+    for lane in lanes:
+        # New map geometry is represented by centerline polylines. Keep support
+        # for the old 4-point segments so the helper remains backwards compatible.
+        if lane and isinstance(lane[0], (tuple, list)):
+            _draw_polyline_ruts(draw, lane, width=max(5, round(9 * strength)), strength=strength)
+            continue
+
+        x0, y0, x1, y1 = lane
+        color = (150, 158, 170, int(105 * strength))
         horizontal = (x1 - x0) >= (y1 - y0)
         if horizontal:
             mid = (y0 + y1) / 2
@@ -398,7 +435,7 @@ def _draw_lane_ruts(size, lanes, strength):
                     points.append((x, center + math.sin(x / 40) * 2))
                     x += 8
                 if len(points) > 1:
-                    draw.line(points, fill=color, width=random.randint(7, 9))
+                    draw.line(points, fill=color, width=rng.randint(7, 9))
         else:
             mid = (x0 + x1) / 2
             offset = (x1 - x0) * 0.22
@@ -410,30 +447,55 @@ def _draw_lane_ruts(size, lanes, strength):
                     points.append((center + math.sin(y / 40) * 2, y))
                     y += 8
                 if len(points) > 1:
-                    draw.line(points, fill=color, width=random.randint(7, 9))
+                    draw.line(points, fill=color, width=rng.randint(7, 9))
     return layer.filter(ImageFilter.GaussianBlur(2))
 
 
-def make_snow_cover_layer(base, strength=1.0, lanes=(), keep_out=()):
-    """Снег на асфальте: неровный покров, сугробы по краям, колеи и тёмный ореол номеров."""
+def _snow_cover_parts(
+        base,
+        strength=1.0,
+        lanes=(),
+        keep_out=(),
+        seed=None,
+        surface_mask=None,
+):
+    """Build the winter surface layers and masks for rendering/debugging."""
+    rng = random.Random(seed)
     gray = base.convert("L")
     size = gray.size
-    asphalt = gray.point(lambda p: 255 if p < 90 else 0)
+    # map3.png has a textured, illustrated asphalt instead of the nearly
+    # uniform dark surface of the previous map. A soft threshold keeps that
+    # texture from turning into jagged black/white islands under the snow.
+    raw_asphalt = gray.point(
+        lambda p: (
+            255
+            if p <= 82
+            else max(0, round((138 - p) * 255 / 56))
+        )
+    )
+    asphalt = raw_asphalt
+    if surface_mask is not None:
+        asphalt = ImageChops.multiply(asphalt, surface_mask.convert("L"))
 
     cover_alpha = int(195 * strength)
-    noise = _low_frequency_noise(size)
+    noise = _low_frequency_noise(size, rng=rng)
     cover_mask = noise.point(lambda p, a=cover_alpha: int(a * (0.82 + 0.18 * p / 255)))
     cover_mask = ImageChops.multiply(cover_mask, asphalt)
     cover = Image.new("RGBA", size, (226, 232, 242, 0))
     cover.putalpha(cover_mask)
 
-    edge = ImageChops.subtract(asphalt, asphalt.filter(ImageFilter.MinFilter(9)))
+    edge = ImageChops.subtract(
+        raw_asphalt,
+        raw_asphalt.filter(ImageFilter.MinFilter(9)),
+    )
+    if surface_mask is not None:
+        edge = ImageChops.multiply(edge, surface_mask.convert("L"))
     edge = edge.filter(ImageFilter.GaussianBlur(4))
     drift_alpha = int(110 * strength)
     drift = Image.new("RGBA", size, (245, 248, 255, 0))
     drift.putalpha(edge.point(lambda p, a=drift_alpha: int(a * p / 255)))
 
-    ruts = _draw_lane_ruts(size, lanes, strength)
+    ruts = _draw_lane_ruts(size, lanes, strength, rng=rng)
     rut_bands = ruts.split()
     rut_alpha = ImageChops.multiply(rut_bands[3], asphalt)
     if keep_out:
@@ -452,14 +514,69 @@ def make_snow_cover_layer(base, strength=1.0, lanes=(), keep_out=()):
     halo = Image.new("RGBA", size, (45, 55, 70, 0))
     halo.putalpha(halo_mask.point(lambda p: int(170 * p / 255)))
 
-    layer = Image.alpha_composite(cover, drift)
-    layer = Image.alpha_composite(layer, ruts)
-    return Image.alpha_composite(layer, halo)
+    return {
+        "surface_mask": (
+            surface_mask.convert("L")
+            if surface_mask is not None
+            else Image.new("L", size, 255)
+        ),
+        "asphalt_mask": asphalt,
+        "cover_mask": cover_mask,
+        "edge_mask": edge,
+        "keep_out_mask": spots if keep_out else Image.new("L", size, 0),
+        "rut_mask": rut_alpha,
+        "cover": cover,
+        "drift": drift,
+        "ruts": ruts,
+        "halo": halo,
+    }
+
+
+def save_winter_debug_masks(parts, output_dir):
+    """Save the masks used by the winter renderer for visual calibration."""
+    os.makedirs(output_dir, exist_ok=True)
+    for name in (
+            "surface_mask",
+            "asphalt_mask",
+            "cover_mask",
+            "edge_mask",
+            "keep_out_mask",
+            "rut_mask",
+    ):
+        parts[name].save(os.path.join(output_dir, f"winter_{name}.png"))
+
+
+def make_snow_cover_layer(
+        base,
+        strength=1.0,
+        lanes=(),
+        keep_out=(),
+        seed=None,
+        surface_mask=None,
+        debug_dir=None,
+):
+    """Снег на асфальте: неровный покров, сугробы по краям и колеи."""
+    parts = _snow_cover_parts(
+        base,
+        strength,
+        lanes,
+        keep_out,
+        seed,
+        surface_mask,
+    )
+    if debug_dir:
+        save_winter_debug_masks(parts, debug_dir)
+
+    layer = Image.alpha_composite(parts["cover"], parts["drift"])
+    layer = Image.alpha_composite(layer, parts["ruts"])
+    return Image.alpha_composite(layer, parts["halo"])
 
 
 def make_winter_tint(size, strength):
     """Холодный голубой свет на весь кадр."""
-    return Image.new("RGBA", size, (205, 220, 245, int(22 * strength)))
+    # Не выбеливаем новую карту: холодный оттенок должен ощущаться только
+    # как лёгкая цветокоррекция поверх снега и фона.
+    return Image.new("RGBA", size, (195, 210, 232, int(12 * strength)))
 
 
 def make_sun_warmth_layer(base, max_alpha=28):
@@ -487,7 +604,7 @@ def make_fog_layer(size):
     return layer
 
 
-def frost_car(car_image, strength):
+def frost_car(car_image, strength, seed=None):
     """Снежная шапка на верхней половине кузова."""
     car = car_image.convert("RGBA")
     width, height = car.size
@@ -495,7 +612,10 @@ def frost_car(car_image, strength):
     midpoint = max(1, height // 2)
     gradient.putdata([int(255 * (1 - y / midpoint)) if y < midpoint else 0 for y in range(height)])
     gradient = gradient.resize(car.size)
-    mask = ImageChops.multiply(gradient, _low_frequency_noise(car.size, cell=6))
+    mask = ImageChops.multiply(
+        gradient,
+        _low_frequency_noise(car.size, cell=6, rng=random.Random(seed)),
+    )
     cap_alpha = int(175 * strength)
     alpha = mask.point(lambda p, a=cap_alpha: int(a * p / 255))
     alpha = ImageChops.multiply(alpha, car.getchannel("A"))
@@ -510,18 +630,16 @@ def add_snow(
         snow_size_range: tuple = (2, 5),
         snow_opacity_range: tuple = (120, 220),
         snow_blur: float = 1.5,
-        seed: int = None
+        seed: int = None,
 ) -> Image.Image:
     """Накладывает снег тремя слоями частиц с отдельными головами и следами."""
-    if seed is not None:
-        random.seed(seed)
-
     if isinstance(img, str):
         base = Image.open(img).convert("RGBA")
     else:
         base = img.convert("RGBA")
 
-    wind = random.uniform(-0.35, -0.18)
+    rng = random.Random(seed)
+    wind = rng.uniform(-0.35, -0.18)
     snow = Image.new("RGBA", base.size, (0, 0, 0, 0))
     default_opacity_midpoint = 170
     opacity_midpoint = sum(snow_opacity_range) / 2
@@ -542,6 +660,7 @@ def add_snow(
             wind,
             opacity_scale,
             blur_scale,
+            rng,
         )
         snow = Image.alpha_composite(snow, layer)
 
@@ -587,8 +706,16 @@ async def generate_weather_samples(output_dir: str = "pics/temp") -> None:
     # Минус в температуре рисует снег вместо капель, без снеговика
     samples.append(("10_frost", "-4°", dict(weather_map["10"])))
     samples.append(("11_lightning", "+12°", {**weather_map["11"], "lightning_chance": 1.0}))
-    samples.append(("01_winter", "-12°", dict(weather_map["01"])))
-    samples.append(("04_winter", "-5°", dict(weather_map["04"])))
+    samples.append((
+        "01_winter",
+        "-12°",
+        {**weather_map["01"], "debug_winter_masks_dir": output_dir},
+    ))
+    samples.append((
+        "04_winter",
+        "-5°",
+        {**weather_map["04"], "debug_winter_masks_dir": output_dir},
+    ))
 
     for code, temp, weather in samples:
         img = await generate_parking_map(
