@@ -1,5 +1,19 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile, InputMediaPhoto
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    BufferedInputFile,
+    InputMediaPhoto,
+    InputRichBlockButtons,
+    InputRichBlockParagraph,
+    InputRichBlockSectionHeading,
+    InputRichBlockTable,
+    InputRichMessage,
+    RichBlockTableCell,
+    RichMessageButton,
+    RichTextButton,
+)
 from aiogram.utils.formatting import Bold, as_key_value, as_list
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -8,6 +22,7 @@ from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.notification_sender import send_reply, EventType, NotificationSender, send_alarm
+from services.telegram_ui import edit_rich
 from utils.cars_generator import generate_carousel_image, cars_count, extra_cars_count
 
 router = Router()
@@ -34,25 +49,127 @@ async def show_settings_menu(event, session, driver: Driver):
 @router.callback_query(MyCallback.filter(F.action == "edit-alarms"),
                        flags={"check_driver": True, "check_callback": True})
 async def edit_alarms(event, driver: Driver):
-    content = Bold("🛎️ Настройки уведомлений:")
-    # content += '\n\n'
-    # content += Bold("✅ - уведомление приходит,\n❌ - уведомление не приходит")
-    content += '\n\n'
     disabled_events = driver.attributes.get("disabled_events", [])
     builder = InlineKeyboardBuilder()
+    fallback_lines = ["🛎️ Настройки уведомлений:", ""]
+    rows = [[
+        _alarm_cell("Уведомление", header=True),
+        _alarm_cell("Описание", header=True),
+        _alarm_cell("Состояние", header=True),
+        _alarm_cell("Тест", header=True),
+    ]]
+
     for event_type in EventType:
         is_on = event_type.name not in disabled_events
-        content += ('✅ ' if is_on else '❌ ')
-        content += as_key_value(event_type.value["button_text"], event_type.value["description"])
-        content += '\n'
-        add_button(('✅ ' if is_on else '❌ ') + event_type.value["button_text"], "set-alarms", driver.chat_id, builder,
-                   event_type=event_type.name, bool_value=is_on)
-        add_button('Тест', "test-alarms", driver.chat_id, builder,
-                   event_type=event_type.name)
+        state = "✅ Включено" if is_on else "❌ Выключено"
+        fallback_lines.append(
+            f"{state} {event_type.value['button_text']} — {event_type.value['description']}"
+        )
+        add_button(
+            f"{'✅' if is_on else '❌'} {event_type.value['button_text']}",
+            "set-alarms",
+            driver.chat_id,
+            builder,
+            event_type=event_type.name,
+            bool_value=is_on,
+        )
+        add_button(
+            "Тест",
+            "test-alarms",
+            driver.chat_id,
+            builder,
+            event_type=event_type.name,
+        )
+        rows.append([
+            _alarm_cell(event_type.value["button_text"]),
+            _alarm_cell(event_type.value["description"]),
+            _alarm_action_cell(
+                state,
+                "set-alarms",
+                driver.chat_id,
+                event_type.name,
+                bool_value=is_on,
+            ),
+            _alarm_action_cell(
+                "Отправить",
+                "test-alarms",
+                driver.chat_id,
+                event_type.name,
+            ),
+        ])
 
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(2)
-    await send_reply(event, content, builder)
+    fallback_lines.extend(["", "Выберите действие в кнопках рядом с уведомлением."])
+    rich_message = InputRichMessage(
+        blocks=[
+            InputRichBlockSectionHeading(text="🛎️ Настройки уведомлений", size=1),
+            InputRichBlockParagraph(
+                text="Переключайте уведомления и отправляйте тест прямо в таблице."
+            ),
+            InputRichBlockTable(
+                cells=rows,
+                is_bordered=True,
+                is_striped=True,
+                is_compact=True,
+            ),
+            InputRichBlockParagraph(
+                text="Изменения сохраняются сразу."
+            ),
+            InputRichBlockButtons(
+                buttons=[
+                    RichMessageButton(
+                        text="⬅️ Назад",
+                        callback_data=MyCallback(
+                            action="show-status",
+                            user_id=driver.chat_id,
+                            spot_id=None,
+                            day_num=None,
+                            event_type=None,
+                            bool_value=None,
+                        ).pack(),
+                    )
+                ],
+                align="center",
+            ),
+        ]
+    )
+    await edit_rich(
+        event,
+        rich_message,
+        personal=event.message.chat.type != "private",
+        fallback_text="\n".join(fallback_lines),
+        fallback_reply_markup=builder.as_markup(),
+    )
+
+
+def _alarm_cell(text, *, header: bool = False):
+    return RichBlockTableCell(
+        text=text,
+        align="left" if not header else "center",
+        valign="middle",
+        is_header=True if header else None,
+    )
+
+
+def _alarm_action_cell(text, action, user_id, event_type, *, bool_value=None):
+    return _alarm_cell(
+        RichTextButton(
+            button=RichMessageButton(
+                text=text,
+                callback_data=MyCallback(
+                    action=action,
+                    user_id=user_id,
+                    spot_id=None,
+                    day_num=None,
+                    event_type=event_type,
+                    bool_value=bool_value,
+                ).pack(),
+                style="link",
+            )
+        ),
+        header=False,
+    )
 
 
 @router.callback_query(MyCallback.filter(F.action == "set-alarms"),

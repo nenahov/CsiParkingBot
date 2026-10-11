@@ -4,7 +4,16 @@ from datetime import datetime
 from typing import Optional, List, Tuple, Dict
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import (
+    InputRichBlockButtons,
+    InputRichBlockParagraph,
+    InputRichBlockSectionHeading,
+    InputRichBlockTable,
+    InputRichMessage,
+    Message,
+    RichMessageButton,
+    RichTextButton,
+)
 from aiogram.utils.formatting import Text, Bold, Code, HashTag, Italic, TextLink
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +23,9 @@ from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.driver_service import DriverService
-from services.notification_sender import send_reply, send_alarm
+from services.notification_sender import send_reply, send_alarm, send_rich_reply
+from services.telegram_ui import answer_content, edit_content
+from utils.rich_ui import cell
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -110,8 +121,13 @@ async def show_shop(message: Message, session: AsyncSession, driver: Driver, cur
     if not items:
         await send_alarm(message, "⚠️ Магазин не создан")
         return
-    content, builder = await get_shop_content_and_keyboard(driver, is_private)
-    await send_reply(message, content, builder)
+    rich_message, fallback, builder = await get_shop_rich_content_and_keyboard(driver, is_private)
+    await send_rich_reply(
+        message,
+        rich_message,
+        builder,
+        fallback_text=fallback,
+    )
     if not is_private:
         await AuditService(session).log_action(driver.id, UserActionType.SHOP, current_day, 0,
                                                f'{driver.title} показывает магазин добрых дел')
@@ -162,7 +178,12 @@ async def confirm_purchase(callback, callback_data: MyCallback, session, driver,
     add_button("❌ Отмена", "cancel-purchase", callback_data.user_id, confirm_builder)
     confirm_builder.adjust(1)
     text = f"Купить «{item['description']}» за {get_cost(item['price'])} 💟?"
-    await callback.message.answer(text, reply_markup=confirm_builder.as_markup())
+    await answer_content(
+        callback,
+        text,
+        personal=callback.message.chat.type != "private",
+        reply_markup=confirm_builder.as_markup(),
+    )
 
 
 @router.callback_query(MyCallback.filter(F.action == "cancel-purchase"),
@@ -170,7 +191,11 @@ async def confirm_purchase(callback, callback_data: MyCallback, session, driver,
 async def cancel_purchase(callback, callback_data: MyCallback):
     await callback.answer("Покупка отменена")
     try:
-        await callback.message.edit_text("❌ Покупка отменена")
+        await edit_content(
+            callback,
+            "❌ Покупка отменена",
+            personal=callback.message.chat.type != "private",
+        )
     except Exception:
         pass
 
@@ -183,8 +208,14 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
             await callback.message.delete()
 
     async def on_sold_out(seller):
-        content, builder = await get_shop_content_and_keyboard(seller, is_private)
-        await send_reply(callback, content, builder)
+        rich_message, fallback, builder = await get_shop_rich_content_and_keyboard(seller, is_private)
+        await send_rich_reply(
+            callback,
+            rich_message,
+            builder,
+            personal=callback.message.chat.type != "private",
+            fallback_text=fallback,
+        )
 
     result = await validate_purchase(
         callback, callback_data, session, driver,
@@ -207,13 +238,23 @@ async def buy_item(callback, callback_data: MyCallback, session, driver, current
     await AuditService(session).log_action(seller.id, UserActionType.SHOP, current_day, -1,
                                            f'{seller.title} продал товар "{item["description"]}" {driver.title}')
     try:
-        await callback.message.edit_text("✅ Покупка совершена!")
+        await edit_content(
+            callback,
+            "✅ Покупка совершена!",
+            personal=callback.message.chat.type != "private",
+        )
     except Exception:
         pass
     await send_alarm(callback,
                      f"✅ '{item['description']}' куплен!\n\nПродавец: {seller.title}\n\nВаш баланс: {driver.get_karma()} 💟")
-    content, builder = await get_shop_content_and_keyboard(seller, is_private)
-    await send_reply(callback, content, builder)
+    rich_message, fallback, builder = await get_shop_rich_content_and_keyboard(seller, is_private)
+    await send_rich_reply(
+        callback,
+        rich_message,
+        builder,
+        personal=callback.message.chat.type != "private",
+        fallback_text=fallback,
+    )
     try:
         await callback.bot.send_message(chat_id=driver.chat_id,
                                         text=f"✅ '{item['description']}' куплен за {get_cost(item['price'])} 💟\n\nПродавец: {seller.title}\n\nВаш баланс: {driver.get_karma()} 💟")
@@ -245,6 +286,104 @@ async def get_shop_content_and_keyboard(driver, is_private):
     content += Italic(f"Обновлено {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     builder = await get_shop_keyboard(driver, driver.attributes.get("shop_items", []))
     return content, builder
+
+
+async def get_shop_rich_content_and_keyboard(driver, is_private):
+    """Build the public shop as a compact native rich table.
+
+    The legacy inline keyboard is retained as a fallback for clients where
+    rich messages are unavailable.  Purchase callback data stays identical,
+    so the same handler serves both renderings.
+    """
+
+    items = driver.attributes.get("shop_items", [])
+    shop_id = driver.attributes.get("shop_id", 0)
+    is_woman = driver.attributes.get("gender", "M") == "F"
+    owner = f"{driver.description} открыл{'а' if is_woman else ''} магазин добрых дел 🫶"
+    prefix = "‼️ Напишите команду в общем чате!\n\n" if is_private else ""
+
+    def stock_text(item):
+        if item["count"] is None:
+            return "∞"
+        return str(max(0, item["count"] - item.get("sold", 0))) + f" / {item['count']}"
+
+    rows = [[
+        cell("Товар", header=True),
+        cell("Цена", header=True, align="center"),
+        cell("Остаток", header=True, align="center"),
+        cell("Действие", header=True, align="center"),
+    ]]
+    fallback_lines = [prefix + owner, ""]
+    rich_actions = []
+    for idx, item in enumerate(items):
+        sold_out = item["count"] is not None and item["count"] <= item.get("sold", 0)
+        remaining = stock_text(item)
+        callback_data = MyCallback(
+            action="confirm-purchase",
+            user_id=driver.chat_id,
+            spot_id=shop_id,
+            day_num=idx,
+            event_type=None,
+            bool_value=None,
+        ).pack()
+        action = RichTextButton(
+            button=RichMessageButton(
+                text="Нет в наличии" if sold_out else "Купить",
+                callback_data=callback_data if not sold_out else None,
+                style="link",
+            )
+        )
+        rows.append([
+            cell(item["description"]),
+            cell(f"{get_cost(item['price'])} 💟", align="center"),
+            cell(remaining, align="center"),
+            cell(action, align="center"),
+        ])
+        fallback_lines.append(
+            f"{item['description']} — {get_cost(item['price'])} 💟 — {remaining}"
+        )
+        if not sold_out:
+            rich_actions.append(
+                RichMessageButton(
+                    text=f"Купить: {item['description']}",
+                    callback_data=callback_data,
+                    style="link",
+                )
+            )
+
+    hide_callback = MyCallback(
+        action="hide-shop",
+        user_id=driver.chat_id,
+        spot_id=None,
+        day_num=None,
+        event_type=None,
+        bool_value=None,
+    ).pack()
+    rich_blocks = [
+        InputRichBlockSectionHeading(text="🫶 Магазин добрых дел", size=1),
+        InputRichBlockParagraph(text=owner),
+        InputRichBlockTable(
+            cells=rows,
+            is_bordered=True,
+            is_striped=True,
+            is_compact=True,
+        ),
+        InputRichBlockParagraph(text="В стоимость включен НДС 10% (минимум 1 💟)."),
+    ]
+    if rich_actions:
+        rich_blocks.append(InputRichBlockButtons(buttons=rich_actions, align="center"))
+    rich_blocks.append(
+        InputRichBlockButtons(
+            buttons=[RichMessageButton(text="❎ Свернуть лавочку", callback_data=hide_callback)],
+            align="center",
+        )
+    )
+    fallback_lines.extend([
+        "",
+        "В стоимость включен НДС 10% (минимум 1 💟).",
+        "#магазин",
+    ])
+    return InputRichMessage(blocks=rich_blocks), "\n".join(fallback_lines), await get_shop_keyboard(driver, items)
 
 
 async def get_shop_keyboard(driver, items):

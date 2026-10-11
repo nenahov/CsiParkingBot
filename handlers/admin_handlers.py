@@ -15,6 +15,7 @@ from services.driver_service import DriverService
 from services.notification_sender import EventType, NotificationSender, send_reply
 from services.param_service import ParamService
 from services.parking_service import ParkingService
+from services.telegram_ui import answer_content
 from utils.cars_generator import cars_count
 
 router = Router()
@@ -25,9 +26,13 @@ async def set_param_handler(message: Message, param_service: ParamService):
     try:
         _, key, value = message.text.split(maxsplit=2)
         response = await param_service.set_parameter(key, value)
-        await message.answer(response)
+        await answer_content(message, response, personal=True)
     except ValueError:
-        await message.answer("Формат команды: /set_param <ключ> <значение>")
+        await answer_content(
+            message,
+            "Формат команды: /set_param <ключ> <значение>",
+            personal=True,
+        )
 
 
 @router.message(Command("get_param"), flags={"check_admin": True})
@@ -35,16 +40,20 @@ async def get_param_handler(message: Message, param_service: ParamService):
     try:
         _, key = message.text.split(maxsplit=1)
         value = await param_service.get_parameter(key)
-        await message.answer(f"{key} = {value}" if value else "Параметр не найден")
+        await answer_content(
+            message,
+            f"{key} = {value}" if value else "Параметр не найден",
+            personal=True,
+        )
     except ValueError:
-        await message.answer("Формат команды: /get_param <ключ>")
+        await answer_content(message, "Формат команды: /get_param <ключ>", personal=True)
 
 
 @router.message(Command("list_params"), flags={"check_admin": True})
 async def list_params_handler(message: Message, param_service: ParamService):
     params = await param_service.list_parameters()
     response = "\n".join(f"{k}: {v}" for k, v in params.items()) if params else "Нет параметров"
-    await message.answer(response)
+    await answer_content(message, response, personal=True)
 
 
 @router.message(
@@ -52,10 +61,14 @@ async def list_params_handler(message: Message, param_service: ParamService):
     flags={"check_admin": True, "check_driver": True})
 async def plus_karma(message: Message, session: AsyncSession, driver: Driver, current_day, is_private, match: re.Match):
     if is_private:
-        await message.answer("Команда недоступна в личных сообщениях.")
+        await answer_content(message, "Команда недоступна в личных сообщениях.", personal=True)
         return
     if not message.reply_to_message:
-        await message.answer("Пожалуйста, ответьте на сообщение пользователя, кому хотите начислить карму.")
+        await answer_content(
+            message,
+            "Пожалуйста, ответьте на сообщение пользователя, кому хотите начислить карму.",
+            personal=True,
+        )
         return
 
     karma = int(match.group(1))  # Извлекаем количество добавляемой кармы
@@ -64,14 +77,17 @@ async def plus_karma(message: Message, session: AsyncSession, driver: Driver, cu
     driver_to = await DriverService(session).get_by_chat_id(replied_user_id)
     if driver_to:
         driver_to.attributes["karma"] = driver_to.get_karma() + karma
-        await message.answer(
-            f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.")
+        await answer_content(
+            message,
+            f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.",
+            personal=True,
+        )
         await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to,
                                                              add_message=match.group(2), karma_change=karma)
         await AuditService(session).log_action(driver_to.id, UserActionType.GET_ADMIN_KARMA, current_day, karma,
                                                f"Админ {driver.title} изменил карму {driver_to.title} на {karma} и стало {driver_to.get_karma()}")
     else:
-        await message.answer("Пользователь не нашелся в базе данных.")
+        await answer_content(message, "Пользователь не нашелся в базе данных.", personal=True)
 
 
 @router.message(
@@ -80,10 +96,10 @@ async def plus_karma(message: Message, session: AsyncSession, driver: Driver, cu
 async def disabled_drivers(message: Message, session: AsyncSession, current_day, match: re.Match):
     drivers = await DriverService(session).get_inactive_drivers()
     if not drivers:
-        await message.answer("Неактивных нет в базе данных.")
+        await answer_content(message, "Неактивных нет в базе данных.", personal=True)
         return
     response = "\n".join(f"{driver.id} - {driver.description}" for driver in drivers)
-    await message.answer(response)
+    await answer_content(message, response, personal=True)
 
 
 @router.message(
@@ -93,15 +109,20 @@ async def find_driver(message: Message, session: AsyncSession, current_day, matc
     text = match.group(1)
     drivers = await DriverService(session).find_by_text(text)
     if not drivers:
-        await message.answer("Водители не нашлись в базе данных.")
+        await answer_content(message, "Водители не нашлись в базе данных.", personal=True)
         return
     if len(drivers) > 1:
         response = "\n".join(f"{driver.id} - {driver.description}" for driver in drivers)
-        await message.answer(response)
+        await answer_content(message, response, personal=True)
         return
 
     content, builder = await get_user_info(current_day, drivers[0], session)
-    await message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await answer_content(
+        message,
+        content,
+        personal=True,
+        reply_markup=builder.as_markup(),
+    )
 
 
 @router.callback_query(MyCallback.filter(F.action == "enable-user"),
@@ -115,7 +136,12 @@ async def enable_user(callback: CallbackQuery, callback_data: MyCallback, sessio
         await AuditService(session).log_action(user.id, UserActionType.ENABLED, current_day, num=enabled,
                                                description=f"Админ {driver.title} {'заблокировал' if enabled == 0 else 'разблокировал'} пользователя {user.title}")
         content, builder = await get_user_info(current_day, user, session)
-        await send_reply(callback, content, builder)
+        await send_reply(
+            callback,
+            content,
+            builder,
+            personal=callback.message.chat.type != "private",
+        )
 
 
 @router.callback_query(MyCallback.filter(F.action == "extra-cars"),
@@ -134,7 +160,12 @@ async def extra_cars(callback: CallbackQuery, callback_data: MyCallback, session
         elif extra_cars > 0:
             user.attributes["car_index_bkp"] = user.attributes.get("car_index", user.id)
         content, builder = await get_user_info(current_day, user, session)
-        await send_reply(callback, content, builder)
+        await send_reply(
+            callback,
+            content,
+            builder,
+            personal=callback.message.chat.type != "private",
+        )
 
 
 @router.message(
@@ -148,13 +179,13 @@ async def add_spot(message: Message, session: AsyncSession, match: re.Match):
     if spot and driver:
         await session.refresh(driver, ["parking_spots"])
         if spot in driver.parking_spots:
-            await message.answer("Место уже есть в списке мест водителя.")
+            await answer_content(message, "Место уже есть в списке мест водителя.", personal=True)
             return
         driver.parking_spots.append(spot)
         await session.commit()
-        await message.answer("Место успешно добавлено в список мест водителя.")
+        await answer_content(message, "Место успешно добавлено в список мест водителя.", personal=True)
     else:
-        await message.answer("Место или водитель не нашлись в базе данных.")
+        await answer_content(message, "Место или водитель не нашлись в базе данных.", personal=True)
 
 
 @router.message(
@@ -168,13 +199,13 @@ async def remove_spot(message: Message, session: AsyncSession, match: re.Match):
     if spot and driver:
         await session.refresh(driver, ["parking_spots"])
         if spot not in driver.parking_spots:
-            await message.answer("Место не в списке мест водителя.")
+            await answer_content(message, "Место не в списке мест водителя.", personal=True)
             return
         driver.parking_spots.remove(spot)
         await session.commit()
-        await message.answer("Место успешно удалено из списка мест водителя.")
+        await answer_content(message, "Место успешно удалено из списка мест водителя.", personal=True)
     else:
-        await message.answer("Место или водитель не нашлись в базе данных.")
+        await answer_content(message, "Место или водитель не нашлись в базе данных.", personal=True)
 
 
 async def get_user_info(current_day, user: Driver, session):

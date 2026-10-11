@@ -3,12 +3,12 @@ import random
 from datetime import timedelta, date
 
 from aiogram import Router, F
-from aiogram.enums import ParseMode
-from aiogram.filters import Command
+from aiogram.filters import Command, or_f
 from aiogram.types import Message
 
 from models.driver import Driver
 from services.driver_service import DriverService
+from services.telegram_ui import answer_content
 from services.weather_service import WeatherService
 
 router = Router()
@@ -66,31 +66,41 @@ async def start_command(message: Message, session):
 
 @router.message(F.text.regexp(r"(?i)(.*написать разработчику)|(.*связаться с разработчиком)"))
 async def dev_command(message: Message):
-    await message.reply("Передам разработчику")
-    await message.bot.send_message(chat_id=203121382,
-                                   text=F"Сообщение от [{message.from_user.full_name}](tg://user?id={message.from_user.id}):\n{message.md_text}",
-                                   parse_mode=ParseMode.MARKDOWN_V2)
+    await answer_content(
+        message,
+        "Передам разработчику",
+        personal=message.chat.type != "private",
+    )
+    await message.bot.send_message(
+        chat_id=203121382,
+        text=(
+            f"Сообщение от {message.from_user.full_name} "
+            f"(id {message.from_user.id}):\n{message.text or message.caption or ''}"
+        ),
+    )
 
 
 @router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*неделю)"), flags={"check_driver": True})
 async def show_weather_week(message: Message, driver: Driver, is_private):
     content = await WeatherService().get_weekly_weather_content()
-    if is_private:
-        await message.reply(**content.as_kwargs())
-    else:
-        await message.answer("Много текста, отправил в ЛС.")
-        await message.bot.send_message(chat_id=driver.chat_id, **content.as_kwargs())
+    await answer_content(message, content, personal=not is_private)
 
 
-@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод.*завтра)"), flags={"check_driver": True})
+@router.message(
+    or_f(Command("weather_tomorrow"), F.text.regexp(r"(?i)(.*прогноз.*погод.*завтра)")),
+    flags={"check_driver": True},
+)
 async def show_weather_tomorrow(message: Message):
     day = date.today() + timedelta(days=1)
     content = await WeatherService().get_weather_content(day)
-    await message.reply(**content.as_kwargs())
+    await answer_content(message, content, personal=message.chat.type != "private")
 
 
-@router.message(F.text.regexp(r"(?i)(.*прогноз.*погод)"), flags={"check_driver": True})
+@router.message(
+    or_f(Command("weather"), F.text.regexp(r"(?i)(.*прогноз.*погод)")),
+    flags={"check_driver": True},
+)
 async def show_weather(message: Message):
     day = date.today()
     content = await WeatherService().get_weather_content(day)
-    await message.reply(**content.as_kwargs())
+    await answer_content(message, content, personal=message.chat.type != "private")

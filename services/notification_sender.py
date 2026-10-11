@@ -7,6 +7,13 @@ from aiogram.utils.formatting import Text
 
 from config import constants
 from models.driver import Driver
+from services.telegram_ui import (
+    answer_content,
+    answer_rich,
+    edit_content,
+    edit_rich,
+    event_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +46,61 @@ class EventType(PyEnum):
                      "description": "Присылается, когда администратор изменил Вашу карму."}
 
 
-async def send_alarm(event, text):
+async def send_alarm(event, text, *, personal: bool = False):
     if isinstance(event, CallbackQuery):
         await event.answer(text, show_alert=True)
     else:
-        await event.reply(text)
+        await answer_content(event, text, personal=personal)
 
     logger.info(f"< {text}")
 
-async def send_reply(event, content, builder):
+
+async def send_reply(event, content, builder, *, personal: bool = False):
     if isinstance(event, CallbackQuery):
-        await event.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+        await edit_content(
+            event,
+            content,
+            personal=personal,
+            reply_markup=builder.as_markup(),
+        )
     else:
-        await event.reply(**content.as_kwargs(), reply_markup=builder.as_markup())
+        await answer_content(
+            event,
+            content,
+            personal=personal,
+            reply_markup=builder.as_markup(),
+        )
     logger.info(f"< {content.as_markdown()}")
+
+
+async def send_rich_reply(
+        event,
+        rich_message,
+        builder=None,
+        *,
+        personal: bool = False,
+        fallback_text: str | None = None,
+):
+    """Отправить/обновить rich-ответ с поддержкой ephemeral-сообщений."""
+
+    markup = builder.as_markup() if builder is not None else None
+    message = event_message(event)
+    if isinstance(event, CallbackQuery) and message is not None:
+        await edit_rich(
+            event,
+            rich_message,
+            personal=personal,
+            fallback_text=fallback_text,
+            reply_markup=markup,
+        )
+    else:
+        await answer_rich(
+            event,
+            rich_message,
+            personal=personal,
+            fallback_text=fallback_text,
+            reply_markup=markup,
+        )
 
 class NotificationSender:
     """

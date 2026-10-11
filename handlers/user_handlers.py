@@ -34,6 +34,8 @@ from services.param_service import ParamService
 from services.parking_service import ParkingService
 from services.queue_service import QueueService
 from services.reservation_service import ReservationService
+from services.telegram_ui import answer_rich, edit_rich
+from utils.rich_ui import cell, heading, paragraph, table
 
 router = Router()
 
@@ -41,15 +43,90 @@ router = Router()
 @router.message(or_f(Command("status"), F.text.regexp(r"(?i)(.*мой статус)|(.*пока.* статус)")),
                 flags={"check_driver": True})
 async def show_status(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
-    content, builder = await get_status_message(driver, is_private, session, current_day)
-    await message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
+    _, builder = await get_status_message(driver, is_private, session, current_day)
+    rich_message, fallback = await get_status_rich_message(
+        driver, session, current_day
+    )
+    await answer_rich(
+        message,
+        rich_message,
+        personal=not is_private,
+        fallback_text=fallback,
+        reply_markup=builder.as_markup(),
+    )
 
 
 @router.callback_query(MyCallback.filter(F.action == "show-status"),
                        flags={"check_driver": True, "check_callback": True})
 async def show_status_callback(callback: CallbackQuery, session, driver, current_day, is_private):
-    content, builder = await get_status_message(driver, is_private, session, current_day)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    _, builder = await get_status_message(driver, is_private, session, current_day)
+    rich_message, fallback = await get_status_rich_message(
+        driver, session, current_day
+    )
+    await edit_rich(
+        callback,
+        rich_message,
+        personal=not is_private,
+        fallback_text=fallback,
+        reply_markup=builder.as_markup(),
+    )
+
+
+async def get_status_rich_message(driver: Driver, session, current_day):
+    """Собрать компактный персональный статус в native rich-формате."""
+
+    await session.commit()
+    await session.refresh(driver, ["reservations", "parking_spots", "current_spots"])
+    _, reservations = await ParkingService(session).get_spots_with_reservations(current_day)
+    in_queue = await QueueService(session).is_driver_in_queue(driver)
+    is_absent = driver.is_absent(current_day)
+    occupied_spots = driver.get_occupied_spots()
+
+    rows = [
+        [
+            cell("Параметр", header=True),
+            cell("Значение", header=True),
+        ]
+    ]
+
+    if occupied_spots:
+        occupied = ", ".join(str(spot.id) for spot in occupied_spots)
+    else:
+        occupied = "нет"
+    rows.append([cell("Сейчас"), cell(f"🅿️ {occupied}")])
+
+    if is_absent:
+        rows.append(
+            [
+                cell("Статус"),
+                cell(f"🫶 Не приеду до {driver.absent_until.strftime('%d.%m.%Y')}"),
+            ]
+        )
+    else:
+        rows.append([cell("Статус"), cell("🚗 Планирую приехать")])
+
+    reserved = []
+    for spot in driver.my_spots():
+        reserved.append(f"{spot.id}: {await get_spot_info(spot, reservations, session)}")
+    rows.append([cell("Закреплённые места"), cell("\n".join(reserved) if reserved else "нет")])
+    rows.append([cell("Очередь"), cell("🙋 стою в очереди" if in_queue else "не стою")])
+    rows.append([cell("Карма"), cell(f"{driver.get_karma()} 💟")])
+
+    blocks = [
+        heading(f"🪪 {driver.title}", size=1),
+        paragraph(driver.description),
+        table(rows),
+    ]
+
+    fallback = (
+        f"🪪 {driver.title}\n\n"
+        f"Сейчас: 🅿️ {occupied}\n"
+        f"Статус: {'не приеду до ' + driver.absent_until.strftime('%d.%m.%Y') if is_absent else 'планирую приехать'}\n"
+        f"Закреплённые места: {', '.join(reserved) if reserved else 'нет'}\n"
+        f"Очередь: {'да' if in_queue else 'нет'}\n"
+        f"Карма: {driver.get_karma()} 💟"
+    )
+    return InputRichMessage(blocks=blocks), fallback
 
 
 async def get_status_message(driver: Driver, is_private, session, current_day):
@@ -197,7 +274,7 @@ async def absent_handler(event, session, driver, current_day, is_private):
         if isinstance(event, CallbackQuery):
             await show_status_callback(event, session, driver, current_day, is_private)
         else:
-            await event.reply("Вы уже уехали. /status")
+            await send_alarm(event, "Вы уже уехали. /status", personal=not is_private)
         return
 
     current_week_day = current_day.weekday()  # 0-6 (пн-вс)
@@ -212,7 +289,7 @@ async def absent_handler(event, session, driver, current_day, is_private):
                                      switch_inline_query_current_chat='Меня не будет дней 7'))
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
-    await send_reply(event, content, builder)
+    await send_reply(event, content, builder, personal=not is_private)
 
 
 @router.callback_query(MyCallback.filter(F.action == "absent-confirm"),
@@ -240,7 +317,11 @@ async def absent_x_days(days, driver: Driver, event, session, current_day, is_pr
         await queue_service.leave_queue(driver)
         await AuditService(session).log_action(driver.id, UserActionType.LEAVE_QUEUE, current_day,
                                                description=f"{driver.description} покинул очередь, т.к. уехал")
-    await send_alarm(event, f"Вы уехали до {date.strftime('%a %d.%m.%Y')}")
+    await send_alarm(
+        event,
+        f"Вы уехали до {date.strftime('%a %d.%m.%Y')}",
+        personal=not is_private,
+    )
     if isinstance(event, CallbackQuery):
         await show_status_callback(event, session, driver, current_day, is_private)
 
@@ -271,7 +352,7 @@ async def comeback(message: Message, session: AsyncSession, driver: Driver, curr
 
 @router.callback_query(MyCallback.filter(F.action == "comeback"),
                        flags={"check_driver": True, "check_callback": True})
-async def comeback_callback(callback: CallbackQuery, session: AsyncSession, driver: Driver, current_day):
+async def comeback_callback(callback: CallbackQuery, session, driver, current_day):
     await comeback_driver(driver, callback, session, current_day)
 
 
@@ -329,7 +410,14 @@ async def comeback_driver(driver, event, session, current_day):
 
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(*sizes)
-    await send_reply(event, content, builder)
+    await send_reply(
+        event,
+        content,
+        builder,
+        personal=event.message.chat.type != "private"
+        if isinstance(event, CallbackQuery)
+        else event.chat.type != "private",
+    )
 
 
 @router.callback_query(MyCallback.filter(F.action == "try-occupy-my-spot"),
@@ -354,7 +442,7 @@ async def try_occupy_spot_callback(callback: CallbackQuery, callback_data: MyCal
                callback_data.spot_id)
     add_button("⬅️ Назад", "show-status", driver.chat_id, builder)
     builder.adjust(1)
-    await send_reply(callback, content, builder)
+    await send_reply(callback, content, builder, personal=not is_private)
 
 
 @router.callback_query(MyCallback.filter(F.action == "occupy-my-spot"),

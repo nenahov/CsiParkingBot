@@ -18,6 +18,7 @@ from middlewares.logging_middleware import LoggingMiddleware
 from middlewares.long_operation import LongOperationMiddleware
 from middlewares.my_callback_check import MyCallbackCheckMiddleware
 from middlewares.new_day_check import NewDayCheckMiddleware
+from services.bot_commands import setup_bot_commands
 from services.param_service import ParamService
 from services.queue_service import QueueService
 from utils.new_day_checker import check_current_day, check_auto_karma_for_absent
@@ -28,6 +29,7 @@ async def main():
     locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
     bot = Bot(token=os.getenv("BOT_TOKEN"))
+    await setup_bot_commands(bot)
     # Запускаем бота и пропускаем все накопленные входящие
     # Да, этот метод можно вызвать даже если у вас поллинг
     await bot.delete_webhook(drop_pending_updates=False)

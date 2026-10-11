@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.filters import or_f
@@ -8,8 +10,96 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import constants
 from handlers.driver_callback import MyCallback
+from handlers.map_handlers import build_map_message, get_frame_index
+from handlers.queue_handlers import join_queue, leave_queue, queue_command
+from handlers.user_handlers import (
+    absent_handler,
+    comeback_driver,
+    get_status_message,
+    get_status_rich_message,
+)
+from services.telegram_ui import answer_content, edit_content, answer_rich
+from services.weather_service import WeatherService
 
 router = Router()
+
+
+@router.callback_query(F.data == "quick:status", flags={"check_driver": True})
+async def quick_status(callback: CallbackQuery, session, driver, current_day, is_private):
+    _, builder = await get_status_message(driver, is_private, session, current_day)
+    rich_message, fallback = await get_status_rich_message(
+        driver, session, current_day
+    )
+    sent = await answer_rich(
+        callback,
+        rich_message,
+        personal=not is_private,
+        fallback_text=fallback,
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer(
+        text=None if sent is not None else "Не удалось отправить статус. Откройте личный чат с ботом.",
+        show_alert=sent is None,
+    )
+
+
+@router.callback_query(F.data == "quick:map", flags={"check_driver": True})
+async def quick_map(callback: CallbackQuery, session, driver, current_day, is_private):
+    frame_index = await get_frame_index(callback.message, session)
+    rich_message, builder = await build_map_message(
+        session,
+        driver,
+        current_day,
+        is_private,
+        frame_index,
+        labels_above_cars=False,
+    )
+    await answer_rich(
+        callback,
+        rich_message,
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quick:weather", flags={"check_driver": True})
+async def quick_weather(callback: CallbackQuery):
+    content = await WeatherService().get_weather_content(date.today())
+    await answer_content(callback, content, personal=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quick:weather-tomorrow", flags={"check_driver": True})
+async def quick_weather_tomorrow(callback: CallbackQuery):
+    content = await WeatherService().get_weather_content(date.today() + timedelta(days=1))
+    await answer_content(callback, content, personal=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quick:queue", flags={"check_driver": True})
+async def quick_queue(callback: CallbackQuery, session, driver, is_private):
+    await queue_command(callback, session, driver, is_private)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quick:join-queue", flags={"check_driver": True})
+async def quick_join_queue(callback: CallbackQuery, session, driver, current_day):
+    await join_queue(callback, session, driver, current_day)
+
+
+@router.callback_query(F.data == "quick:leave-queue", flags={"check_driver": True})
+async def quick_leave_queue(callback: CallbackQuery, session, driver, current_day):
+    await leave_queue(callback, session, driver, current_day)
+
+
+@router.callback_query(F.data == "quick:comeback", flags={"check_driver": True})
+async def quick_comeback(callback: CallbackQuery, session, driver, current_day):
+    await comeback_driver(driver, callback, session, current_day)
+
+
+@router.callback_query(F.data == "quick:absent", flags={"check_driver": True})
+async def quick_absent(callback: CallbackQuery, session, driver, current_day, is_private):
+    await absent_handler(callback, session, driver, current_day, is_private)
 
 
 @router.callback_query(or_f(MyCallback.filter(F.action == "pass"), F.data == "pass"),
@@ -26,10 +116,11 @@ async def help_command(message: Message):
 
 @router.callback_query(F.data.startswith("back_to_main"))
 async def back_to_main(callback: CallbackQuery):
-    await main_commands(callback.message, False)
+    await main_commands(callback, False)
 
 
-async def main_commands(message, is_new: bool):
+async def main_commands(event, is_new: bool):
+    message = event.message if isinstance(event, CallbackQuery) else event
     content = as_list(
         Bold(f"Привет, я бот для бронирования парковочных мест!"),
         f"Для работы с ботом достаточно написать ему в чат или послать команду из меню.",
@@ -85,9 +176,19 @@ async def main_commands(message, is_new: bool):
     builder.add(InlineKeyboardButton(text="🤖 Другое", callback_data=f"other_commands"))
     builder.adjust(1)
     if is_new:
-        await message.answer(**content.as_kwargs(), reply_markup=builder.as_markup())
+        await answer_content(
+            message,
+            content,
+            personal=message.chat.type != "private",
+            reply_markup=builder.as_markup(),
+        )
     else:
-        await message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+        await edit_content(
+            event,
+            content,
+            personal=message.chat.type != "private",
+            reply_markup=builder.as_markup(),
+        )
 
 
 @router.callback_query(F.data.startswith("starter_info"))
@@ -136,7 +237,8 @@ async def starter_info(callback: CallbackQuery):
                                      switch_inline_query_current_chat='Написать разработчику: "Вместо этого текста напишите Ваше сообщение"'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("info_commands"))
@@ -154,18 +256,19 @@ async def info_commands(callback: CallbackQuery):
             as_key_value(Text("📝 ", Code("показать список команд")), "показывает список команд"),
             marker="• ", ))
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="ℹ️ Мой статус", switch_inline_query_current_chat='Мой статус'))
-    builder.add(InlineKeyboardButton(text="🗺️ Показать карту", switch_inline_query_current_chat='Показать карту'))
+    builder.add(InlineKeyboardButton(text="ℹ️ Мой статус", callback_data="quick:status"))
+    builder.add(InlineKeyboardButton(text="🗺️ Показать карту", callback_data="quick:map"))
     builder.add(InlineKeyboardButton(text="🗺️ Карта на завтра",
                                      switch_inline_query_current_chat='Показать карту на завтра'))
-    builder.add(InlineKeyboardButton(text="⛅️ Прогноз погоды", switch_inline_query_current_chat='Прогноз погоды'))
+    builder.add(InlineKeyboardButton(text="⛅️ Прогноз погоды", callback_data="quick:weather"))
     builder.add(InlineKeyboardButton(text="☀️ Прогноз погоды на завтра",
-                                     switch_inline_query_current_chat='Прогноз погоды на завтра'))
+                                     callback_data="quick:weather-tomorrow"))
     builder.add(
         InlineKeyboardButton(text="📝 Показать список команд", switch_inline_query_current_chat='Список команд'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1, 2, 2, 1, 1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("shop_commands"))
@@ -197,7 +300,8 @@ async def shop_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="✖️ Закрыть магазин", switch_inline_query_current_chat='Закрыть магазин'))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("reservation_commands"))
@@ -214,15 +318,16 @@ async def reservation_commands(callback: CallbackQuery):
                          "занимаете ранее забронированное место или встаете в очередь"),
             marker="• ", ))
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="🚗 Приеду сегодня", switch_inline_query_current_chat='Приеду сегодня'))
+    builder.add(InlineKeyboardButton(text="🚗 Приеду сегодня", callback_data="quick:comeback"))
     builder.add(
-        InlineKeyboardButton(text="🫶 Не приеду сегодня", switch_inline_query_current_chat='Не приеду сегодня'))
+        InlineKeyboardButton(text="🫶 Не приеду сегодня", callback_data="quick:absent"))
     builder.add(InlineKeyboardButton(text="🏝️ Буду отсутствовать N дней",
                                      switch_inline_query_current_chat='Меня не будет <ЧИСЛО> дня/дней'))
-    builder.add(InlineKeyboardButton(text="🏎️ Вернулся раньше", switch_inline_query_current_chat='Вернулся раньше'))
+    builder.add(InlineKeyboardButton(text="🏎️ Вернулся раньше", callback_data="quick:comeback"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("queue_commands"))
@@ -242,14 +347,15 @@ async def queue_commands(callback: CallbackQuery):
             marker="• ", ))
     builder = InlineKeyboardBuilder()
     builder.add(
-        InlineKeyboardButton(text="ℹ️ Показать очередь", switch_inline_query_current_chat='Показать очередь'))
+        InlineKeyboardButton(text="ℹ️ Показать очередь", callback_data="quick:queue"))
     builder.add(
-        InlineKeyboardButton(text="🙋 Встать в очередь", switch_inline_query_current_chat='Встать в очередь'))
+        InlineKeyboardButton(text="🙋 Встать в очередь", callback_data="quick:join-queue"))
     builder.add(
-        InlineKeyboardButton(text="✋ Покинуть очередь", switch_inline_query_current_chat='Покинуть очередь'))
+        InlineKeyboardButton(text="✋ Покинуть очередь", callback_data="quick:leave-queue"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("other_commands"))
@@ -277,7 +383,8 @@ async def other_commands(callback: CallbackQuery):
     builder.add(InlineKeyboardButton(text="🔒 В разработке", callback_data=f"restrict_commands"))
     builder.add(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_to_main"))
     builder.adjust(1)
-    await callback.message.edit_text(**content.as_kwargs(), reply_markup=builder.as_markup())
+    await edit_content(callback, content, personal=callback.message.chat.type != "private",
+                       reply_markup=builder.as_markup())
 
 
 async def get_content_text(commands):
