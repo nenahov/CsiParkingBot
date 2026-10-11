@@ -142,8 +142,10 @@ PARKING_LANES = (GARBAGE_TRUCK_ROUTE,)
 # исключения строятся из актуальной раскладки мест в _winter_keep_out_areas().
 PARKING_SPOT_AREAS = ()
 
-SNOWFALL_MULTIPLIER = 2.0
-FROST_SNOW_MULTIPLIER = 1.3
+# Снег должен быть хорошо заметен на большой карте: базовое значение прогноза
+# усиливаем отдельно для снегопада и для осадков, замерзающих при минусе.
+SNOWFALL_MULTIPLIER = 7.0
+FROST_SNOW_MULTIPLIER = 1.8
 
 RANDOM_CARS_EXTRA_MAX = 3
 RANDOM_CARS_EXCLUDED = set()
@@ -449,7 +451,15 @@ async def generate_parking_map(parking_spots,
         )
     )
     if weather.get("num_clouds", 0) > 0 and not is_fog:
-        cloud_layer = get_clouds_layer(overlay, num_clouds=weather.get("num_clouds", 0))
+        cloud_layer = get_clouds_layer(
+            overlay,
+            num_clouds=weather.get("num_clouds", 0),
+            cloud_size_range=weather.get("cloud_size_range", (100, 200)),
+            opacity=weather.get("cloud_opacity", 100),
+            cloud_color=weather.get("cloud_color", (255, 255, 255)),
+            shadow_color=weather.get("shadow_color", (72, 88, 112)),
+            seed=static_seed + 7001,
+        )
         overlay = Image.alpha_composite(overlay, cloud_layer)
 
     if rain_drop_count > 0 and "-" in temp:
@@ -472,7 +482,10 @@ async def generate_parking_map(parking_spots,
         overlay = Image.alpha_composite(overlay, make_winter_tint(overlay.size, tint_strength))
 
     if is_fog:
-        overlay = Image.alpha_composite(overlay, make_fog_layer(overlay.size))
+        overlay = Image.alpha_composite(
+            overlay,
+            make_fog_layer(overlay.size, seed=static_seed + 5003),
+        )
 
     # Температура и значок остаются читаемыми поверх любых погодных эффектов.
     _draw_temperature(overlay, temp, weather.get("icon", ""))

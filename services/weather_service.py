@@ -18,13 +18,48 @@ params = {
 }
 weather_map = {
     "01": {"icon": "☀", "sun_alpha": 120},
-    "02": {"icon": "⛅️", "sun_alpha": 110, "num_clouds": 3},
-    "03": {"icon": "⛅️", "sun_alpha": 100, "num_clouds": 7},
-    "04": {"icon": "🌥️", "sun_alpha": 80, "num_clouds": 10},
-    "09": {"icon": "🌦️", "sun_alpha": 70, "rain_drop_count": 400, "num_clouds": 15},
-    "10": {"icon": "🌧️", "rain_drop_count": 600, "num_clouds": 20},
-    "11": {"icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 30},
-    "13": {"icon": "🌨️", "num_clouds": 5, "snow_count": 500},
+    "02": {
+        "icon": "⛅️", "sun_alpha": 110, "num_clouds": 5,
+        "cloud_size_range": (150, 250),
+        "cloud_color": (255, 255, 255),
+        "shadow_color": (195, 205, 220),
+    },
+    "03": {
+        "icon": "⛅️", "sun_alpha": 100, "num_clouds": 10,
+        "cloud_size_range": (100, 230),
+        "cloud_color": (248, 250, 255),
+        "shadow_color": (178, 190, 210),
+    },
+    "04": {
+        "icon": "🌥️", "sun_alpha": 80, "num_clouds": 16,
+        "cloud_size_range": (170, 300),
+        "cloud_color": (232, 238, 247),
+        "shadow_color": (155, 170, 194),
+    },
+    "09": {
+        "icon": "🌦️", "sun_alpha": 70, "rain_drop_count": 400,
+        "num_clouds": 20, "cloud_size_range": (130, 260),
+        "cloud_color": (218, 228, 241),
+        "shadow_color": (125, 145, 174),
+    },
+    "10": {
+        "icon": "🌧️", "rain_drop_count": 600, "num_clouds": 26,
+        "cloud_size_range": (160, 300),
+        "cloud_color": (190, 207, 226),
+        "shadow_color": (94, 116, 148),
+    },
+    "11": {
+        "icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 36,
+        "cloud_size_range": (190, 340),
+        "cloud_color": (158, 175, 202),
+        "shadow_color": (65, 82, 112),
+    },
+    "13": {
+        "icon": "🌨️", "num_clouds": 8, "snow_count": 500,
+        "cloud_size_range": (120, 240),
+        "cloud_color": (230, 242, 255),
+        "shadow_color": (170, 190, 220),
+    },
     "50": {"icon": "🌫️", "fog": True}
 }
 

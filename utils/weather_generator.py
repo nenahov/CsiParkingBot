@@ -10,23 +10,42 @@ from PIL import ImageDraw, ImageFilter
 def make_sun_glare_layer(size, center=None, max_alpha=120, radius=None):
     """
     Создаёт слой «солнечного» градиента на весь кадр.
+
+    Градиент строится на уменьшенной маске и затем масштабируется обратно.
+    Это сохраняет мягкое мультяшное свечение, но сокращает количество
+    операций с концентрическими окружностями на большой карте.
     """
     w, h = size
     if center is None:
         center = (w * 0.3, h * 0.2)  # сверху слева
     if radius is None:
         radius = int(max(w, h) * 1.05)
-    layer = Image.new('RGBA', size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-    # концентрические круги
-    for r in range(radius, 0, -1):
-        alpha = int(max_alpha * (1 - r / radius))
-        color = (255, 255, 200, alpha)
+
+    # На текущей карте 941x1672 это уменьшает рабочую маску примерно
+    # в 9 раз по площади и заметно ускоряет отрисовку.
+    render_scale = max(1, min(4, max(w, h) // 512))
+    small_size = (
+        max(1, (w + render_scale - 1) // render_scale),
+        max(1, (h + render_scale - 1) // render_scale),
+    )
+    small_center = (center[0] / render_scale, center[1] / render_scale)
+    small_radius = max(1, int(radius / render_scale))
+
+    alpha_mask = Image.new("L", small_size, 0)
+    draw = ImageDraw.Draw(alpha_mask)
+    # Концентрические круги строятся на маленькой маске, затем сглаживаются
+    # при увеличении до исходного размера.
+    for r in range(small_radius, 0, -1):
+        alpha = int(max_alpha * (1 - r / small_radius))
         bbox = [
-            (center[0] - r, center[1] - r),
-            (center[0] + r, center[1] + r),
+            (small_center[0] - r, small_center[1] - r),
+            (small_center[0] + r, small_center[1] + r),
         ]
-        draw.ellipse(bbox, fill=color)
+        draw.ellipse(bbox, fill=alpha)
+
+    alpha_mask = alpha_mask.resize(size, Image.Resampling.LANCZOS)
+    layer = Image.new("RGBA", size, (255, 255, 200, 0))
+    layer.putalpha(alpha_mask)
     return layer.filter(ImageFilter.GaussianBlur(radius * 0.02))
 
 
@@ -256,7 +275,13 @@ def get_clouds_layer(
         num_clouds: int = 15,
         cloud_size_range: tuple = (100, 200),
         opacity: int = 100,
-        blur_radius: int = 15
+        blur_radius: int = 15,
+        cloud_color: tuple = (255, 255, 255),
+        shadow_color: tuple = (72, 88, 112),
+        shadow_offset: tuple = (14, 18),
+        shadow_opacity: int = 42,
+        shadow_blur_radius: int = 24,
+        seed=None,
 ):
     """
     Draw random cloud shapes on an image using Pillow.
@@ -266,42 +291,64 @@ def get_clouds_layer(
     :param cloud_size_range: Tuple (min_size, max_size) for cloud diameter
     :param opacity: Opacity of cloud fill (0-255)
     :param blur_radius: Gaussian blur radius to soften clouds
+    :param cloud_color: Цвет мультяшной массы облака
+    :param shadow_color: Цвет мягкой тени под облаком
+    :param shadow_offset: Смещение мультяшной тени облака по x/y
+    :param shadow_opacity: Прозрачность тени облака
+    :param shadow_blur_radius: Радиус размытия тени
     """
     width, height = base.size
+    rng = random.Random(seed)
 
-    # Create an RGBA layer for drawing clouds
+    # Облака и их тени рисуются из одной геометрии. Смещённая серо-синяя
+    # тень помогает облакам восприниматься над картой, а не белыми пятнами
+    # непосредственно на асфальте.
     cloud_layer = Image.new("RGBA", base.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(cloud_layer)
+    shadow_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    clouds = ImageDraw.Draw(cloud_layer)
+    shadows = ImageDraw.Draw(shadow_layer)
+    shadow_dx, shadow_dy = shadow_offset
 
     for _ in range(num_clouds):
-        # Random center position for the cloud (y limited to sky region)
-        cx = random.randint(0, width)
-        cy = random.randint(0, height)
+        cx = rng.randint(0, width)
+        cy = rng.randint(0, height)
 
-        # Random overall size of the cloud
-        w = random.randint(*cloud_size_range)
+        w = rng.randint(*cloud_size_range)
         h = w // 2
 
-        # Draw overlapping ellipses to form a cloud
-        for _ in range(random.randint(3, 6)):
-            ex = cx + random.randint(-w // 2, w // 2)
-            ey = cy + random.randint(-h // 2, h // 2)
-            ew = random.randint(w // 2, w)
-            eh = random.randint(h // 2, h)
-            draw.ellipse([ex, ey, ex + ew, ey + eh], fill=(255, 255, 255, opacity))
+        for _ in range(rng.randint(3, 6)):
+            ex = cx + rng.randint(-w // 2, w // 2)
+            ey = cy + rng.randint(-h // 2, h // 2)
+            ew = rng.randint(w // 2, w)
+            eh = rng.randint(h // 2, h)
+            ellipse = (ex, ey, ex + ew, ey + eh)
+            shadows.ellipse(
+                (
+                    ellipse[0] + shadow_dx,
+                    ellipse[1] + shadow_dy,
+                    ellipse[2] + shadow_dx,
+                    ellipse[3] + shadow_dy,
+                ),
+                fill=(*shadow_color, shadow_opacity),
+            )
+            clouds.ellipse(ellipse, fill=(*cloud_color, opacity))
 
-    # Apply a Gaussian blur to soften the cloud edges
+    shadow_layer = shadow_layer.filter(
+        ImageFilter.GaussianBlur(shadow_blur_radius)
+    )
     cloud_layer = cloud_layer.filter(ImageFilter.GaussianBlur(blur_radius))
-
-    # Save the resulting image
-    return cloud_layer
+    return Image.alpha_composite(shadow_layer, cloud_layer)
 
 
-# доля, размер, цвет, alpha, длина следа, blur головы, blur следа
+# Доля, размер, цвет, alpha, длина следа, blur головы, blur следа.
+# Пять планов дают снегу более выраженную глубину: от мелкой снежной пыли
+# вдали до крупных хлопьев прямо перед камерой.
 SNOW_LAYERS = [
-    (0.60, (0.25, 0.50), (225, 235, 255), (55, 110), (0, 0), 1.2, 0),
-    (0.32, (0.65, 1.00), (250, 252, 255), (100, 175), (3, 6), 0.3, 0.7),
-    (0.08, (1.00, 1.35), (255, 255, 255), (135, 190), (6, 10), 0.45, 1.0),
+    (0.30, (0.18, 0.35), (215, 228, 250), (40, 85), (0, 0), 1.6, 0),
+    (0.25, (0.32, 0.55), (225, 235, 255), (55, 115), (0, 2), 1.1, 0.2),
+    (0.22, (0.55, 0.85), (240, 247, 255), (85, 150), (2, 5), 0.55, 0.5),
+    (0.15, (0.80, 1.10), (250, 252, 255), (110, 180), (4, 8), 0.35, 0.8),
+    (0.08, (1.10, 1.50), (255, 255, 255), (145, 210), (7, 12), 0.5, 1.1),
 ]
 
 
@@ -587,21 +634,32 @@ def make_sun_warmth_layer(base, max_alpha=28):
     return layer
 
 
-def make_fog_layer(size):
-    """Равномерная пелена: дальняя верхняя часть кадра скрыта сильнее."""
-    width, height = size
-    alpha = Image.new("L", (1, height))
-    if height == 1:
-        alpha.putpixel((0, 0), 100)
-    else:
-        alpha.putdata([
-            int(130 - 60 * y / (height - 1))
-            for y in range(height)
-        ])
-    alpha = alpha.resize(size)
-    layer = Image.new("RGBA", size, (210, 214, 218, 0))
-    layer.putalpha(alpha)
-    return layer
+def make_fog_layer(size, seed=None):
+    """Туман для вида сверху: ровная дымка и неоднородные мягкие сгустки."""
+    rng = random.Random(seed)
+
+    # Тонкая общая пелена приглушает контраст всей карты без привязки
+    # к верху/низу кадра — у карты с видом сверху нет горизонта.
+    veil = Image.new("RGBA", size, (205, 213, 222, 42))
+
+    # Крупные туманные поля создают основную неоднородность.
+    broad_noise = _low_frequency_noise(size, cell=180, rng=rng)
+    broad_alpha = broad_noise.point(lambda p: 10 + round(50 * p / 255))
+    broad = Image.new("RGBA", size, (218, 224, 231, 0))
+    broad.putalpha(broad_alpha)
+
+    # Более компактные плотные сгустки появляются только на светлых участках
+    # второй шумовой маски и не образуют узнаваемых «облаков».
+    local_noise = _low_frequency_noise(size, cell=85, rng=rng)
+    local_alpha = local_noise.point(
+        lambda p: 0 if p <= 120 else round(62 * (p - 120) / 135)
+    )
+    local_alpha = local_alpha.filter(ImageFilter.GaussianBlur(18))
+    local = Image.new("RGBA", size, (230, 234, 239, 0))
+    local.putalpha(local_alpha)
+
+    fog = Image.alpha_composite(veil, broad)
+    return Image.alpha_composite(fog, local)
 
 
 def frost_car(car_image, strength, seed=None):
@@ -646,10 +704,28 @@ def add_snow(
     opacity_scale = max(0.25, opacity_midpoint / default_opacity_midpoint)
     blur_scale = max(0, snow_blur / 1.5)
 
-    for share, size_mul, color, alpha_range, trail_range, head_blur, trail_blur in SNOW_LAYERS:
+    requested_count = max(0, int(snow_count))
+    remaining_count = requested_count
+    for index, (
+            share,
+            size_mul,
+            color,
+            alpha_range,
+            trail_range,
+            head_blur,
+            trail_blur,
+    ) in enumerate(SNOW_LAYERS):
+        # Последний слой получает остаток, чтобы из-за округления не терялись
+        # снежинки при распределении по большему количеству планов.
+        layer_count = (
+            remaining_count
+            if index == len(SNOW_LAYERS) - 1
+            else min(remaining_count, round(requested_count * share))
+        )
+        remaining_count -= layer_count
         layer = _draw_falling_snow_layer(
             base.size,
-            int(snow_count * share),
+            layer_count,
             snow_size_range,
             size_mul,
             color,
