@@ -38,18 +38,21 @@ weather_map = {
     },
     "09": {
         "icon": "🌦️", "sun_alpha": 70, "rain_drop_count": 400,
+        "lightning_chance": 0.02,
         "num_clouds": 20, "cloud_size_range": (130, 260),
         "cloud_color": (218, 228, 241),
         "shadow_color": (125, 145, 174),
     },
     "10": {
-        "icon": "🌧️", "rain_drop_count": 600, "num_clouds": 26,
+        "icon": "🌧️", "rain_drop_count": 600, "lightning_chance": 0.02,
+        "num_clouds": 26,
         "cloud_size_range": (160, 300),
         "cloud_color": (190, 207, 226),
         "shadow_color": (94, 116, 148),
     },
     "11": {
-        "icon": "⛈️", "rain_drop_count": 1000, "num_clouds": 36,
+        "icon": "⛈️", "rain_drop_count": 1000, "lightning_chance": 0.21,
+        "num_clouds": 36,
         "cloud_size_range": (190, 340),
         "cloud_color": (158, 175, 202),
         "shadow_color": (65, 82, 112),
