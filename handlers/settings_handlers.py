@@ -1,4 +1,5 @@
 from aiogram import Router, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -7,6 +8,7 @@ from aiogram.types import (
     InputMediaPhoto,
     InputRichBlockButtons,
     InputRichBlockParagraph,
+    InputRichBlockPhoto,
     InputRichBlockSectionHeading,
     InputRichBlockTable,
     InputRichMessage,
@@ -22,10 +24,17 @@ from models.driver import Driver
 from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.notification_sender import send_reply, EventType, NotificationSender, send_alarm
-from services.telegram_ui import edit_rich
-from utils.cars_generator import generate_carousel_image, cars_count, extra_cars_count
+from services.telegram_ui import answer_rich, edit_rich
+from utils.cars_generator import (
+    cars_count,
+    extra_cars_count,
+    generate_avatar_gallery_image,
+    generate_avatar_preview_image,
+    generate_carousel_image,
+)
 
 router = Router()
+AVATAR_PAGE_SIZE = 12
 
 
 @router.callback_query(MyCallback.filter(F.action == "settings"),
@@ -203,23 +212,326 @@ async def test_alarms(event: CallbackQuery, callback_data: MyCallback, session, 
 @router.callback_query(MyCallback.filter(F.action == "edit-avatar"),
                        flags={"check_driver": True, "check_callback": True})
 async def edit_avatar(event: CallbackQuery, driver: Driver):
-    current_index = driver.attributes.get("car_index", driver.id)
-    cars_count_for_driver = extra_cars_count if driver.attributes.get("extra_cars", 0) > 0 else cars_count
-    photo = generate_carousel_image(current_index, cars_count_for_driver)
-    await event.message.answer_photo(caption="🏎️ Выберите свой аватар:", show_caption_above_media=True,
-                                     photo=BufferedInputFile(photo.getvalue(), filename="carousel.png"),
-                                     reply_markup=get_carousel_keyboard(current_index, driver.chat_id, 'success'))
+    await _send_avatar_gallery(event, driver, page=_avatar_page_for_current(driver))
     await event.answer()
 
 
 @router.callback_query(MyCallback.filter(F.action == "set-avatar"),
                        flags={"check_driver": True, "check_callback": True})
 async def set_avatar(event: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    driver.attributes["car_index"] = callback_data.spot_id
+    cars_count_for_driver = _cars_count_for_driver(driver)
+    avatar_index = callback_data.spot_id
+    if avatar_index is None or not 0 <= avatar_index < cars_count_for_driver:
+        await event.answer("Эта машинка недоступна.", show_alert=True)
+        return
+    driver.attributes["car_index"] = avatar_index
     await send_alarm(event, "🏎️ Аватар успешно установлен")
     await AuditService(session).log_action(driver.id, UserActionType.CHOOSE_AVATAR, current_day,
-                                           num=callback_data.spot_id,
-                                           description=f"{driver.description} выбрал аватар {callback_data.spot_id}")
+                                           num=avatar_index,
+                                           description=f"{driver.description} выбрал аватар {avatar_index}")
+
+
+def _cars_count_for_driver(driver: Driver) -> int:
+    return extra_cars_count if driver.attributes.get("extra_cars", 0) > 0 else cars_count
+
+
+def get_avatar_page_count(cars_count_for_driver: int) -> int:
+    return max(1, (cars_count_for_driver + AVATAR_PAGE_SIZE - 1) // AVATAR_PAGE_SIZE)
+
+
+def _avatar_page_for_current(driver: Driver) -> int:
+    total = _cars_count_for_driver(driver)
+    current_index = int(driver.attributes.get("car_index", driver.id)) % total
+    return current_index // AVATAR_PAGE_SIZE
+
+
+def _avatar_rich_button(
+        text: str,
+        action: str,
+        chat_id: int,
+        *,
+        spot_id: int | None = None,
+        page: int | None = None,
+        style: str | None = None,
+) -> RichMessageButton:
+    return RichMessageButton(
+        text=text,
+        callback_data=MyCallback(
+            action=action,
+            user_id=chat_id,
+            spot_id=spot_id,
+            day_num=page,
+            event_type=None,
+            bool_value=None,
+        ).pack(),
+        style=style,
+    )
+
+
+def get_avatar_gallery_keyboard(
+        page: int,
+        cars_count_for_driver: int,
+        chat_id: int,
+        current_index: int,
+) -> InlineKeyboardMarkup:
+    """Legacy inline-клавиатура для галереи, если rich-сообщения недоступны."""
+    builder = InlineKeyboardBuilder()
+    page_count = get_avatar_page_count(cars_count_for_driver)
+    first_index = page * AVATAR_PAGE_SIZE
+    for offset in range(AVATAR_PAGE_SIZE):
+        avatar_index = first_index + offset
+        if avatar_index >= cars_count_for_driver:
+            break
+        label = f"✅ {avatar_index + 1}" if avatar_index == current_index else str(avatar_index + 1)
+        add_button(label, "avatar-preview", chat_id, builder,
+                   spot_id=avatar_index, day_num=page)
+    builder.adjust(3)
+    add_button("◀️", "avatar-page", chat_id, builder,
+               spot_id=max(0, page - 1), day_num=page,
+               style="primary" if page > 0 else "secondary")
+    add_button(f"{page + 1}/{page_count}", "avatar-page", chat_id, builder,
+               spot_id=page, day_num=page)
+    add_button("▶️", "avatar-page", chat_id, builder,
+               spot_id=min(page_count - 1, page + 1), day_num=page,
+               style="primary" if page < page_count - 1 else "secondary")
+    builder.adjust(3)
+    return builder.as_markup()
+
+
+def get_avatar_preview_keyboard(
+        page: int,
+        cars_count_for_driver: int,
+        chat_id: int,
+        avatar_index: int,
+) -> InlineKeyboardMarkup:
+    """Legacy inline-клавиатура для крупного превью."""
+    builder = InlineKeyboardBuilder()
+    add_button("✅ Выбрать этот аватар", "set-avatar", chat_id,
+               builder, spot_id=avatar_index, style="success")
+    add_button("↩️ К списку", "avatar-page", chat_id, builder, spot_id=page, day_num=page)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_avatar_gallery_rich_message(
+        page: int,
+        cars_count_for_driver: int,
+        chat_id: int,
+        current_index: int,
+) -> InputRichMessage:
+    page_count = get_avatar_page_count(cars_count_for_driver)
+    first_index = page * AVATAR_PAGE_SIZE
+    cells = []
+    for offset in range(AVATAR_PAGE_SIZE):
+        avatar_index = first_index + offset
+        if avatar_index >= cars_count_for_driver:
+            break
+        label = f"✅ {avatar_index + 1}" if avatar_index == current_index else str(avatar_index + 1)
+        cells.append(
+            RichBlockTableCell(
+                text=RichTextButton(
+                    button=_avatar_rich_button(
+                        label,
+                        "avatar-preview",
+                        chat_id,
+                        spot_id=avatar_index,
+                        page=page,
+                        style="success" if avatar_index == current_index else "link",
+                    )
+                ),
+                align="center",
+                valign="middle",
+            )
+        )
+
+    while len(cells) % 3:
+        cells.append(RichBlockTableCell(text=""))
+
+    table_rows = [cells[index:index + 3] for index in range(0, len(cells), 3)]
+    navigation = []
+    if page > 0:
+        navigation.append(_avatar_rich_button(
+            "◀️",
+            "avatar-page",
+            chat_id,
+            spot_id=page - 1,
+            page=page,
+            style="link",
+        ))
+    if page < page_count - 1:
+        navigation.append(_avatar_rich_button(
+            "▶️",
+            "avatar-page",
+            chat_id,
+            spot_id=page + 1,
+            page=page,
+            style="link",
+        ))
+    return InputRichMessage(
+        blocks=[
+            InputRichBlockSectionHeading(text="🏎️ Выберите аватар", size=1),
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(
+                    media=BufferedInputFile(
+                        generate_avatar_gallery_image(
+                            first_index,
+                            cars_count_for_driver,
+                            selected_index=current_index,
+                        ).getvalue(),
+                        filename="avatar-gallery.png",
+                    )
+                )
+            ),
+            InputRichBlockParagraph(
+                text=f"Страница {page + 1}/{page_count} · Варианты {first_index + 1}–"
+                     f"{min(first_index + AVATAR_PAGE_SIZE, cars_count_for_driver)}. "
+                     "Нажмите номер под нужной машинкой для крупного превью."
+            ),
+            InputRichBlockTable(
+                cells=table_rows,
+                is_bordered=True,
+                is_striped=False,
+                is_compact=True,
+            ),
+            InputRichBlockButtons(buttons=navigation, align="center"),
+        ]
+    )
+
+
+def build_avatar_preview_rich_message(
+        page: int,
+        cars_count_for_driver: int,
+        chat_id: int,
+        avatar_index: int,
+) -> InputRichMessage:
+    navigation = [
+        _avatar_rich_button(
+            "✅ Выбрать этот аватар",
+            "set-avatar",
+            chat_id,
+            spot_id=avatar_index,
+            page=page,
+            style="success",
+        ),
+        _avatar_rich_button("↩️ К списку", "avatar-page", chat_id,
+                            spot_id=page, page=page, style="link"),
+    ]
+    return InputRichMessage(
+        blocks=[
+            InputRichBlockSectionHeading(
+                text=f"🏎️ Машинка #{avatar_index + 1}",
+                size=1,
+            ),
+            InputRichBlockPhoto(
+                photo=InputMediaPhoto(
+                    media=BufferedInputFile(
+                        generate_avatar_preview_image(avatar_index).getvalue(),
+                        filename="avatar-preview.png",
+                    )
+                )
+            ),
+            InputRichBlockParagraph(
+                text="Если вам нравится этот вариант, подтвердите выбор кнопкой ниже."
+            ),
+            InputRichBlockButtons(buttons=navigation, align="center"),
+        ]
+    )
+
+
+async def _send_avatar_gallery(event: CallbackQuery, driver: Driver, page: int):
+    total = _cars_count_for_driver(driver)
+    page = max(0, min(page, get_avatar_page_count(total) - 1))
+    current_index = int(driver.attributes.get("car_index", driver.id)) % total
+    rich_message = build_avatar_gallery_rich_message(
+        page, total, driver.chat_id, current_index
+    )
+    fallback_photo = generate_avatar_gallery_image(
+        page * AVATAR_PAGE_SIZE, total, selected_index=current_index
+    )
+    fallback_markup = get_avatar_gallery_keyboard(
+        page, total, driver.chat_id, current_index
+    )
+    try:
+        await answer_rich(
+            event,
+            rich_message,
+            personal=event.message.chat.type != "private",
+        )
+    except TelegramBadRequest:
+        await event.message.answer_photo(
+            caption=f"🏎️ Выберите аватар — страница {page + 1}/"
+                    f"{get_avatar_page_count(total)}",
+            show_caption_above_media=True,
+            photo=BufferedInputFile(fallback_photo.getvalue(), filename="avatar-gallery.png"),
+            reply_markup=fallback_markup,
+        )
+
+
+async def _edit_avatar_screen(event: CallbackQuery, rich_message: InputRichMessage,
+                              fallback_photo, fallback_markup):
+    try:
+        await edit_rich(
+            event,
+            rich_message,
+            personal=event.message.chat.type != "private",
+        )
+    except TelegramBadRequest:
+        try:
+            await event.message.edit_media(
+                media=InputMediaPhoto(
+                    caption="🏎️ Выберите аватар:",
+                    show_caption_above_media=True,
+                    media=BufferedInputFile(
+                        fallback_photo.getvalue(), filename="avatar-picker.png"
+                    ),
+                ),
+                reply_markup=fallback_markup,
+            )
+        except Exception:
+            await event.message.answer_photo(
+                caption="🏎️ Выберите аватар:",
+                show_caption_above_media=True,
+                photo=BufferedInputFile(
+                    fallback_photo.getvalue(), filename="avatar-picker.png"
+                ),
+                reply_markup=fallback_markup,
+            )
+
+
+@router.callback_query(MyCallback.filter(F.action == "avatar-page"),
+                       flags={"check_driver": True, "check_callback": True})
+async def avatar_page(event: CallbackQuery, callback_data: MyCallback, driver: Driver):
+    total = _cars_count_for_driver(driver)
+    page = callback_data.spot_id or 0
+    page = max(0, min(page, get_avatar_page_count(total) - 1))
+    current_index = int(driver.attributes.get("car_index", driver.id)) % total
+    await _edit_avatar_screen(
+        event,
+        build_avatar_gallery_rich_message(page, total, driver.chat_id, current_index),
+        generate_avatar_gallery_image(
+            page * AVATAR_PAGE_SIZE, total, selected_index=current_index
+        ),
+        get_avatar_gallery_keyboard(page, total, driver.chat_id, current_index),
+    )
+    await event.answer()
+
+
+@router.callback_query(MyCallback.filter(F.action == "avatar-preview"),
+                       flags={"check_driver": True, "check_callback": True})
+async def avatar_preview(event: CallbackQuery, callback_data: MyCallback, driver: Driver):
+    total = _cars_count_for_driver(driver)
+    avatar_index = callback_data.spot_id
+    if avatar_index is None or not 0 <= avatar_index < total:
+        await event.answer("Эта машинка недоступна.", show_alert=True)
+        return
+    page = avatar_index // AVATAR_PAGE_SIZE
+    await _edit_avatar_screen(
+        event,
+        build_avatar_preview_rich_message(page, total, driver.chat_id, avatar_index),
+        generate_avatar_preview_image(avatar_index),
+        get_avatar_preview_keyboard(page, total, driver.chat_id, avatar_index),
+    )
+    await event.answer()
 
 
 @router.callback_query(F.data.startswith("carousel:"), flags={"check_driver": True})

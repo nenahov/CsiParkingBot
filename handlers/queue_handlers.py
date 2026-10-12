@@ -94,7 +94,7 @@ async def queue_command(message: Message, session, driver, is_private):
 def _queue_cell(text: RichTextUnion, *, header: bool = False, align: str = "left"):
     return RichBlockTableCell(
         text=text,
-        align=align,
+        align="center" if header else align,
         valign="middle",
         is_header=True if header else None,
     )

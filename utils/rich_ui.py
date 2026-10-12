@@ -27,7 +27,7 @@ def cell(
 ) -> RichBlockTableCell:
     return RichBlockTableCell(
         text=text,
-        align=align,
+        align="center" if header else align,
         valign="middle",
         is_header=True if header else None,
     )

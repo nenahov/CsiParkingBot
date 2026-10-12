@@ -336,7 +336,7 @@ async def render_spot_schedule(callback: CallbackQuery, spot_id, session, driver
 def _cell(text, *, header: bool = False, align: str = "left"):
     return RichBlockTableCell(
         text=text,
-        align=align,
+        align="center" if header else align,
         valign="middle",
         is_header=True if header else None,
     )

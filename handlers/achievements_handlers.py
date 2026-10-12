@@ -189,7 +189,7 @@ async def top_karma(message: Message, session: AsyncSession, match: re.Match):
 def _cell(text, *, header: bool = False, align: str = "left"):
     return RichBlockTableCell(
         text=text,
-        align=align,
+        align="center" if header else align,
         valign="middle",
         is_header=True if header else None,
     )

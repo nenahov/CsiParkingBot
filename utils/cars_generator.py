@@ -13,8 +13,15 @@ from utils.weather_generator import make_sun_glare_layer, get_clouds_layer, add_
 logger = logging.getLogger(__name__)
 
 cars3 = Image.open("./pics/cars3.png").convert("RGBA")
+avatar_cars = Image.open("./pics/cars4.png").convert("RGBA")
 cars_count = 60
 extra_cars_count = 60
+avatar_car_columns = 12
+avatar_car_rows = 5
+avatar_car_left = 3
+avatar_car_top = 17
+avatar_car_width = 116
+avatar_car_height = 213
 regular_font = ImageFont.truetype("ariali.ttf", 40)
 car_w, car_h = (100, 50)
 finish_block_size = 5
@@ -108,10 +115,102 @@ def generate_carousel_image(current_index: int, cars_count_for_driver: int) -> i
     return bio
 
 
+def generate_avatar_gallery_image(
+        start_index: int,
+        cars_count_for_driver: int,
+        selected_index: int | None = None,
+) -> io.BytesIO:
+    """Рисует контактный лист 3×4 для выбора аватара."""
+    columns, rows = 3, 4
+    cell_width, cell_height = 180, 140
+    gap, padding = 12, 18
+    width = padding * 2 + columns * cell_width + (columns - 1) * gap
+    height = padding * 2 + rows * cell_height + (rows - 1) * gap
+    canvas = Image.new("RGB", (width, height), "#101923")
+    draw = ImageDraw.Draw(canvas)
+    font = ImageFont.load_default()
+
+    for offset in range(columns * rows):
+        car_index = start_index + offset
+        if car_index >= cars_count_for_driver:
+            break
+
+        col, row = offset % columns, offset // columns
+        x = padding + col * (cell_width + gap)
+        y = padding + row * (cell_height + gap)
+        is_selected = car_index == selected_index
+        card_color = "#263b48" if is_selected else "#1a2934"
+        border_color = "#f6c453" if is_selected else "#344957"
+        draw.rounded_rectangle(
+            (x, y, x + cell_width, y + cell_height),
+            radius=14,
+            fill=card_color,
+            outline=border_color,
+            width=3 if is_selected else 1,
+        )
+
+        car = get_avatar_car(car_index).convert("RGBA")
+        car.thumbnail((cell_width - 28, cell_height - 44), Image.Resampling.LANCZOS)
+        car_x = x + (cell_width - car.width) // 2
+        car_y = y + 8 + (cell_height - 44 - car.height) // 2
+        canvas.paste(car, (car_x, car_y), car)
+        draw.text(
+            (x + 10, y + cell_height - 26),
+            f"#{car_index + 1}",
+            font=font,
+            fill="#f4f7f9",
+        )
+
+    bio = io.BytesIO()
+    canvas.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
+
+
+def generate_avatar_preview_image(current_index: int) -> io.BytesIO:
+    """Рисует крупное превью одной машинки."""
+    width, height = 640, 360
+    canvas = Image.new("RGB", (width, height), "#101923")
+    draw = ImageDraw.Draw(canvas)
+    draw.rounded_rectangle(
+        (12, 12, width - 12, height - 12),
+        radius=24,
+        fill="#1a2934",
+        outline="#344957",
+        width=2,
+    )
+
+    car = get_avatar_car(current_index).convert("RGBA")
+    car.thumbnail((width - 120, height - 100), Image.Resampling.LANCZOS)
+    canvas.paste(car, ((width - car.width) // 2, (height - car.height) // 2), car)
+    draw.text(
+        (28, height - 42),
+        f"#{current_index + 1}",
+        font=ImageFont.load_default(),
+        fill="#f4f7f9",
+    )
+
+    bio = io.BytesIO()
+    canvas.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
+
+
 def get_car(current_index):
     current_index = current_index
     return extract_sprite(cars3, (50 * (current_index % 12), 100 * (current_index // 12),
                                   50 * (1 + (current_index % 12)), 100 * (1 + (current_index // 12))))
+
+
+def get_avatar_car(current_index: int) -> Image.Image:
+    """Извлекает машинку из cars4.png по сетке 12×5 с заданными отступами."""
+    column = current_index % avatar_car_columns
+    row = current_index // avatar_car_columns
+    left = avatar_car_left + column * avatar_car_width
+    right = left + avatar_car_width
+    top = avatar_car_top + row * avatar_car_height
+    bottom = top + avatar_car_height
+    return avatar_cars.crop((left, top, right, bottom))
 
 
 def extract_sprite(sprite_sheet, sprite_rect):
