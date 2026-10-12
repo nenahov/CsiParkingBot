@@ -154,13 +154,13 @@ RANDOM_CARS_EXCLUDED = set()
 def get_spot_layout(spot_id: int):
     """(x, y, car_x, car_y, car_rotate) по подложке map3.png."""
     if 1 <= spot_id <= 17:
-        x, y, angle = 207, 256 + (spot_id - 1) * SPOT_WIDTH, 90
+        x, y, angle = 207, 256 + (spot_id - 1) * SPOT_WIDTH, 270
     elif 18 <= spot_id <= 34:
-        x, y, angle = 390, 299 + (spot_id - 18) * SPOT_WIDTH, 270
+        x, y, angle = 390, 299 + (spot_id - 18) * SPOT_WIDTH, 90
     elif 35 <= spot_id <= 51:
-        x, y, angle = 390 + SPOT_HEIGHT, 299 + (spot_id - 35) * SPOT_WIDTH, 90
+        x, y, angle = 390 + SPOT_HEIGHT, 299 + (spot_id - 35) * SPOT_WIDTH, 270
     elif 52 <= spot_id <= 64:
-        x, y, angle = 667, 415 + (spot_id - 52) * SPOT_WIDTH, 270
+        x, y, angle = 667, 415 + (spot_id - 52) * SPOT_WIDTH, 90
     elif spot_id == 65:
         # Длинное место примыкает сбоку к обычным местам 53–55.
         return 759, 545, 763, 562, 180
