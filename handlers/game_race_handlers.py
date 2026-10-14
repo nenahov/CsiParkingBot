@@ -71,19 +71,43 @@ def _unschedule_deadline(chat_id: int):
 async def restore_race_deadlines(bot, session):
     """Восстановить только активные таймеры после перезапуска процесса."""
     raw = await ParamService(session).get_parameter("race_state", "{}")
-    for chat_id, data in json.loads(raw).items():
-        if data and data["phase"] == "selection":
-            _schedule_deadline(bot, int(chat_id), GameState.from_dict(data))
+    states = json.loads(raw)
+    if not isinstance(states, dict):
+        logger.warning("Некорректный формат race_state: ожидался JSON-объект")
+        return
+
+    for chat_id, data in states.items():
+        # Запись может быть пустой после завершения гонки или сохранена в
+        # формате предыдущей версии игры. Такие записи не являются активными
+        # выборами и не должны мешать запуску бота.
+        if not isinstance(data, dict) or data.get("phase") != "selection":
+            continue
+        try:
+            state = GameState.from_dict(data)
+            _schedule_deadline(bot, int(chat_id), state)
+        except (KeyError, TypeError, ValueError):
+            logger.warning(
+                "Пропуск некорректного race_state для чата %s",
+                chat_id,
+                exc_info=True,
+            )
 
 
 async def get_state(chat_id: int, session) -> GameState | None:
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
     state_dict = states.get(str(chat_id), None)
-    if state_dict is None:
+    if not isinstance(state_dict, dict) or "phase" not in state_dict:
         return None
-    state = GameState.from_dict(state_dict)
-    return state
+    try:
+        return GameState.from_dict(state_dict)
+    except (KeyError, TypeError, ValueError):
+        logger.warning(
+            "Некорректный race_state для чата %s; считаем игру неактивной",
+            chat_id,
+            exc_info=True,
+        )
+        return None
 
 
 async def save_state(chat_id: int, game_state: GameState, session):

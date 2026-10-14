@@ -1,14 +1,15 @@
+import json
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from aiogram.types import InputRichBlockButtons, InputRichBlockTable, RichTextButton
 
 from handlers.driver_callback import MyCallback
 from handlers.game_race_handlers import (
     _panel_keyboard, _panel_message, _public_race_message,
-    _race_chat_id, execute_race, router,
+    _race_chat_id, execute_race, get_state, restore_race_deadlines, router,
 )
 from utils.game_race_utils import GameState, SELECTION_WINDOW
 from utils.race_simulation import BOOST_BONUS, HINDER_PENALTY
@@ -164,6 +165,35 @@ class RaceSettlementTests(unittest.IsolatedAsyncioTestCase):
             bot.send_animation.assert_awaited_once()
             bot.send_rich_message.assert_awaited_once()
         self.assertEqual(sum(p.attributes["karma"] - 100 for p in entrants), 8 * 50)
+
+
+class RaceStateRestoreTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_state_does_not_prevent_deadline_restoration(self):
+        active = state().to_dict()
+        saved = json.dumps({
+            "-101": {"player_ids": [1], "wheels": {}, "weather": {}},
+            "-102": None,
+            "-103": {"phase": "selection"},  # incomplete new-format record
+            "-104": active,
+        })
+        service = Mock()
+        service.get_parameter = AsyncMock(return_value=saved)
+        scheduler = Mock()
+        with (
+            patch("handlers.game_race_handlers.ParamService", return_value=service),
+            patch("handlers.game_race_handlers._race_scheduler", scheduler),
+        ):
+            await restore_race_deadlines(Mock(), Mock())
+        scheduler.add_job.assert_called_once()
+        self.assertEqual(scheduler.add_job.call_args.kwargs["id"], "race-deadline--104")
+
+    async def test_legacy_state_is_not_treated_as_active_game(self):
+        service = Mock()
+        service.get_parameter = AsyncMock(return_value=json.dumps({
+            "-101": {"player_ids": [1], "wheels": {}, "weather": {}},
+        }))
+        with patch("handlers.game_race_handlers.ParamService", return_value=service):
+            self.assertIsNone(await get_state(-101, Mock()))
 
 
 if __name__ == "__main__":
