@@ -15,6 +15,7 @@ from models.user_audit import UserActionType
 from services.audit_service import AuditService
 from services.driver_service import DriverService
 from services.notification_sender import send_alarm
+from utils.game_parking_city_generator import generate_city_map_with_constraints
 from utils.game_parking_utils import generate_map_with_constraints, STONE, FINISH, EMPTY, FUEL, CAR, TREASURE
 
 states = dict()
@@ -52,7 +53,10 @@ async def game_parking(callback: CallbackQuery, session: AsyncSession, driver: D
     await callback.message.answer(**content.as_kwargs())
     game_state = get_state(driver)
     if game_state is None or game_state.is_end_game():
-        game_state = generate_map_with_constraints(17, 13)
+        if random.randint(0, 100) < 50:
+            game_state = generate_map_with_constraints(17, 13)
+        else:
+            game_state = generate_city_map_with_constraints(17, 13)
         save_state(driver, game_state)
         driver.attributes["karma"] = max(0, driver.get_karma() - 1)
         await AuditService(session).log_action(driver.id, UserActionType.GAME_KARMA, current_day, -1,
@@ -109,7 +113,13 @@ async def move_callback(callback: CallbackQuery, callback_data: MyCallback, sess
     if game_state is None:
         await send_alarm(callback, "⚠️ Начните Новую игру!")
         return
+    if game_state.is_end_game():
+        await callback.answer("Игра уже завершена")
+        return
     item = game_state.move(callback_data.spot_id, callback_data.day_num)
+    if item is None:
+        await callback.answer("Сюда нельзя проехать")
+        return
     save_state(driver, game_state)
     if item is not None and item == TREASURE:
         driver.attributes["karma"] = driver.get_karma() + 1
