@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont
 from moviepy import ImageSequenceClip
 
 from utils.game_race_utils import GameState
+from utils.race_simulation import RaceAction, RaceSimulationResult, resolve_race_simulation
 from utils.weather_generator import make_sun_glare_layer, get_clouds_layer, add_edge_fade_mask, make_rain_layer
 
 logger = logging.getLogger(__name__)
@@ -303,7 +304,16 @@ def draw_start_race_track(players, lane_height=70, track_length=800,
     return img
 
 
-def create_race_gif(game_state: GameState, players, chat_id: int, output_path='race.gif', frame_count=50, duration=100):
+def create_race_gif(
+        game_state: GameState,
+        players,
+        chat_id: int,
+        output_path='race.gif',
+        frame_count=50,
+        duration=100,
+        simulation_result: RaceSimulationResult | None = None,
+        actions: dict[int, RaceAction] | None = None,
+):
     """
     Создаёт GIF с "гонкой" машин по нарисованной трассе.
 
@@ -320,17 +330,28 @@ def create_race_gif(game_state: GameState, players, chat_id: int, output_path='r
                             bg_color=(120, 120, 120),
                             track_length=1800).convert('RGBA')
     max_x = float(track.width - car_w)
-    # Различные базовые скорости для разнообразия гонки
-    speed_factors = [1.0 for _ in range(lane_count)]
-    base_speeds = [(max_x + car_w) / frame_count * f for f in speed_factors]
-    # погодный фактор скорости
-    weather_factor = [-1001.0 for _ in range(lane_count)]
-    positions = [0.0] * lane_count
+    wheels = [
+        game_state.wheels.get(
+            str(player.id),
+            game_state.wheels.get(player.id, player.attributes.get("wheels", 0)),
+        )
+        for player in players
+    ]
+    if simulation_result is None:
+        simulation_result = resolve_race_simulation(
+            players=players,
+            wheels=wheels,
+            weather_forecast=game_state.weather,
+            actions=actions,
+            seed=random.randrange(2 ** 31),
+            frame_count=frame_count,
+            track_distance=max_x,
+            car_width=car_w,
+        )
     np_frames = []
-    winners = list()
     frames = []
     seg_count = 3
-    type_segs = get_weather_for_segments(seg_count, game_state, players)
+    type_segs = simulation_result.weather_segments
     logger.info(f"Type segments: {type_segs}")
     sunny_segs = [idx for idx, t in enumerate(type_segs) if t == 2]
     sun_layer = make_sun_glare_layer((track.width, track.height), max_alpha=100)
@@ -339,37 +360,17 @@ def create_race_gif(game_state: GameState, players, chat_id: int, output_path='r
     cloud_layer = get_clouds_layer(track)
     cloudy_segs = [idx for idx, t in enumerate(type_segs) if t != 2]
     cloud_layer = add_edge_fade_mask(cloud_layer, cloudy_segs, seg_count=seg_count)
-    for _ in range(frame_count):
+    for frame_index in range(frame_count):
         frame = track.copy()
-        step_winners = []
         for idx in range(0, lane_count):
             car = get_car(players[idx].attributes.get("car_index", players[idx].id % cars_count))
             car = car.rotate(270, expand=True)
-            part_before = int(seg_count * positions[idx] // max_x)
-            positions[idx] = positions[idx] + base_speeds[idx]
-            x = int(positions[idx])
-            part_after = int(seg_count * positions[idx] // max_x)
-            if part_before != part_after or weather_factor[idx] < -1000.0:
-                wheels = players[idx].attributes.get("wheels", 0)
-                seg = -1 if part_after >= len(type_segs) else type_segs[part_after]
-                min_w = 0
-                max_w = 0
-                if seg == 0:
-                    min_w, max_w = (0.15, 0.4) if wheels == 0 else (0.0, 0.1) if wheels == 1 else (0.05, 0.2)
-                elif seg == 1:
-                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.4, 0.8) if wheels == 1 else (0.0, 0.05)
-                elif seg == 2:
-                    min_w, max_w = (0.05, 0.2) if wheels == 0 else (0.0, 0.05) if wheels == 1 else (0.3, 0.7)
-                weather_factor[idx] = random.uniform(min_w, max_w)
-                speed_factors[idx] += part_after * random.uniform(0.0, 0.02)
-                base_speeds[idx] = (max_x + car_w) * (speed_factors[idx] + weather_factor[idx]) / frame_count
+            x = int(simulation_result.position_at(idx, frame_index))
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
             draw_car_with_shadow(car, frame, x, y)
-            if positions[idx] >= max_x - finish_block_size * 2:
+            if x >= max_x - finish_block_size * 2:
                 draw_car_with_shadow(car, frame, 0, y)
-                if idx not in winners:
-                    step_winners.append((idx, positions[idx]))
 
         # Накладываем слои
         for rainy_seg in [idx for idx, t in enumerate(type_segs) if t == 1]:
@@ -379,7 +380,6 @@ def create_race_gif(game_state: GameState, players, chat_id: int, output_path='r
 
         frame = Image.alpha_composite(frame, cloud_layer)
 
-        [winners.append(t[0]) for t in sorted(step_winners, key=lambda x: x[1], reverse=True)]
         # Для GIF конвертируем в P-палитру
         frames.append(frame.convert('P'))
         np_frames.append(np.asarray(frame))
@@ -399,7 +399,7 @@ def create_race_gif(game_state: GameState, players, chat_id: int, output_path='r
         ffmpeg_params=["-movflags", "faststart"],
         audio=False
     )
-    return winners
+    return simulation_result.winners
 
 
 def get_weather_for_segments(seg_count, game_state: GameState, players):
@@ -411,8 +411,9 @@ def get_weather_for_segments(seg_count, game_state: GameState, players):
 
     # Для последнего сегмента выберем подходящую погоду для наименее популярных колес(шин)
     lst = [p.attributes.get("wheels", 0) for p in players]
-    # Считаем частоту каждого числа
+    # Считаем частоту всех трех типов, включая отсутствующие в заезде.
     counts = Counter(lst)
+    counts.update({0: 0, 1: 0, 2: 0})
     # Находим минимальную частоту
     min_freq = min(counts.values())
     # Собираем все числа с этой частотой

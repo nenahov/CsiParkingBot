@@ -21,6 +21,7 @@ from services.audit_service import AuditService
 from services.driver_service import DriverService
 from services.notification_sender import send_reply, send_rich_reply
 from services.telegram_ui import answer_rich
+from utils.race_simulation import RACE_ENTRY_FEE
 
 PERIOD_IN_DAYS = 30
 
@@ -56,7 +57,10 @@ async def show_achievements(event, session, driver: Driver, current_day):
                     a.action in [UserActionType.JOIN_QUEUE, UserActionType.LEAVE_QUEUE]))
     content += get_achievement_row("Стоик 🪨", stoic, 2, 3, 5)
 
-    racer = sum(1 for a in actions if a.action == UserActionType.GAME_KARMA and a.num == -5)
+    racer = sum(
+        1 for a in actions
+        if a.action == UserActionType.GAME_KARMA and a.num == -RACE_ENTRY_FEE
+    )
     content += get_achievement_row("Гонщик 🏎️", racer, 3, 7, 15)
 
     traveler = len(set(a.num for a in actions if a.action == UserActionType.TAKE_SPOT))

@@ -40,6 +40,9 @@ async def main():
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_message_to_queue, "interval", seconds=1 * 60, args=(bot,))
+    game_race_handlers.register_race_scheduler(scheduler)
+    async with db_pool() as session:
+        await game_race_handlers.restore_race_deadlines(bot, session)
     logging.getLogger('apscheduler.executors.default').setLevel(logging.WARNING)
     scheduler.start()
 
