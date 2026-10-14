@@ -156,7 +156,7 @@ def _draw_splashes(size, count):
     return layer.filter(ImageFilter.GaussianBlur(0.5))
 
 
-LIGHTNING_CHANCE = 0.21
+LIGHTNING_CHANCE = 0.02
 
 # (цвет, множитель ширины, альфа, blur) — от внешнего ореола к ядру
 LIGHTNING_PASSES = [
