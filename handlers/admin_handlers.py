@@ -80,7 +80,7 @@ async def plus_karma(message: Message, session: AsyncSession, driver: Driver, cu
         await answer_content(
             message,
             f"{'💖' if karma >= 0 else '💔'} {driver_to.description} получает {'+' if karma >= 0 else '-'}{karma} кармы.",
-            personal=True,
+            personal=False,
         )
         await NotificationSender(message.bot).send_to_driver(EventType.KARMA_CHANGED, driver, driver_to,
                                                              add_message=match.group(2), karma_change=karma)
