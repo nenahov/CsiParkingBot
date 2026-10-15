@@ -6,7 +6,7 @@ from datetime import datetime
 from io import BytesIO
 
 from aiogram import Router, F
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import (
     CallbackQuery, Message, FSInputFile, BufferedInputFile, User,
     DisabledButton,
@@ -14,7 +14,7 @@ from aiogram.types import (
     InputRichBlockTable, InputRichMessage, RichBlockTableCell,
     RichMessageButton, RichTextButton, RichTextTextMention,
 )
-from aiogram.utils.formatting import Bold, Spoiler, as_key_value, Code, Text, HashTag
+from aiogram.utils.formatting import Bold, Spoiler, as_key_value, Code, Text, HashTag, TextMention
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,8 @@ from services.telegram_ui import answer_rich, edit_rich
 from utils.cars_generator import draw_start_race_track, create_race_gif
 from utils.game_race_utils import GameState, generate_game_with_weather_forecast
 from utils.race_simulation import (
-    RACE_ENTRY_FEE, RaceAction, allocate_prizes, resolve_race_simulation,
+    GUARD_ABSORPTION, RACE_ENTRY_FEE, RaceAction, allocate_prizes,
+    resolve_race_simulation,
 )
 
 MIN_PLAYERS = 7
@@ -265,7 +266,7 @@ def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None)
         ("neutral", "➖ Без карты", "—"),
         ("boost", "⚡ Форсаж", "+5% ×1"),
         ("hinder", "🎯 Помеха", f"−10% ×{target_count}"),
-        ("guard", "🛡️ Защита", "⛔ 🎯"),
+        ("guard", "🛡️ Защита", f"−{GUARD_ABSORPTION:.0%} 🎯"),
     )
     for kind, title, effect in card_options:
         card_rows.append([
@@ -291,7 +292,8 @@ def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None)
         ),
         InputRichBlockParagraph(
             text="⚡ себе на случайном участке · 🎯 на общем случайном участке "
-                 "· 🛡️ от всех входящих помех"
+                 f"(помехи складываются) · 🛡️ ослабляет каждую помеху "
+                 f"на {GUARD_ABSORPTION:.0%}"
         ),
     ]
     if action and action.kind == "hinder":
@@ -337,6 +339,7 @@ def _panel_fallback(game_state: GameState, driver: Driver) -> str:
     return (
         f"🎮 Ваш выбор\nШины: {_wheel_icon(wheel)}\n"
         f"Карта: {_action_icon(action)}\n"
+        f"Помехи складываются; защита снижает каждую на {GUARD_ABSORPTION:.0%}.\n"
         f"Для выбора используйте кнопки под сообщением."
     )
 
@@ -349,7 +352,7 @@ def _panel_keyboard(game_state: GameState, driver: Driver, players, chat_id=None
         ))
     for kind, label in (
             ("neutral", "➖"), ("boost", "⚡ +5%"),
-            ("hinder", "🎯 −10%"), ("guard", "🛡️"),
+            ("hinder", "🎯 −10%"), ("guard", f"🛡️ {GUARD_ABSORPTION:.0%}"),
     ):
         builder.button(text=label, callback_data=_callback(
             "race_action", driver.chat_id, event_type=kind, chat_id=chat_id,
@@ -422,10 +425,12 @@ def _result_rich_message(simulation, players, game_state: GameState):
             target = players[event["target"]].title
             outcome = {
                 "success": "🎯",
-                "blocked": "🛡️",
-                "stack_cap": "↩️",
+                "reduced": "🛡️🎯",
             }[event["status"]]
-            lines.append(f"{outcome} {actor} → {target}")
+            lines.append(
+                f"{outcome} {actor} → {target} "
+                f"(−{event['penalty_applied']:.0%})"
+            )
         if len(hindrances) > 12:
             lines.append(f"…ещё {len(hindrances) - 12} воздействий")
         blocks.append(InputRichBlockParagraph(text="\n".join(lines)))
@@ -455,7 +460,7 @@ async def _update_public_race_message(bot, chat_id: int, game_state: GameState, 
                 ),
                 reply_markup=_public_fallback_keyboard(game_state),
             )
-        except TelegramBadRequest:
+        except Exception:
             logger.warning("Не удалось обновить сообщение гонки: %s", error)
 
 
@@ -465,22 +470,58 @@ async def _send_selection_window(callback: CallbackQuery, game_state: GameState,
         await DriverService(session).get_by_id(player_id)
         for player_id in game_state.player_ids
     ]
+    fallback = Text(
+        f"🏁 Окно выбора открыто до {_deadline_text(game_state)}.\n",
+        *(
+            TextMention(
+                f"{player.title} ",
+                user=User(
+                    id=player.chat_id, is_bot=False, first_name=player.title,
+                ),
+            )
+            for player in players
+        ),
+    )
+    fallback_markup = _public_fallback_keyboard(game_state)
+    try:
+        sent = await callback.message.bot.send_rich_message(
+            chat_id=chat_id,
+            rich_message=_public_race_message(game_state, players),
+        )
+    except TelegramAPIError:
+        logger.warning(
+            "Rich-сообщение окна выбора не отправлено в чат %s; "
+            "пробуем обычное сообщение",
+            chat_id, exc_info=True,
+        )
+        sent = None
+    # Не удаляем рабочее сообщение набора, пока новое сообщение не создано.
+    # Если rich API или его fallback недоступны, участники должны хотя бы
+    # сохранить старое сообщение и возможность повторить действие.
+    if sent is None:
+        try:
+            sent = await callback.message.bot.send_message(
+                chat_id=chat_id,
+                **fallback.as_kwargs(),
+                reply_markup=fallback_markup,
+            )
+        except TelegramAPIError:
+            logger.exception("Не удалось отправить окно выбора гонки в чат %s", chat_id)
+            return None
+    if sent is None:
+        logger.error("Telegram вернул пустой ответ при отправке окна выбора в чат %s", chat_id)
+        return None
+    game_state.public_message_id = sent.message_id
+    await save_state(chat_id, game_state, session)
     try:
         await callback.message.delete()
     except Exception:
-        pass
-    sent = await answer_rich(
-        callback,
-        _public_race_message(game_state, players),
-        fallback_text=(
-                f"🏁 Окно выбора открыто до {_deadline_text(game_state)}.\n"
-                + " ".join(f"@{p.username}" for p in players if p.username)
-        ),
-        fallback_reply_markup=_public_fallback_keyboard(game_state),
-    )
-    if sent is not None:
-        game_state.public_message_id = getattr(sent, "message_id", None)
-        await save_state(chat_id, game_state, session)
+        logger.warning(
+            "Не удалось удалить старое сообщение набора гонки в чате %s",
+            chat_id,
+            exc_info=True,
+        )
+    return sent
 
 
 @router.message(
@@ -593,43 +634,15 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
         return
 
     game_state.begin_selection(datetime.now(), random.randrange(2 ** 31))
-    await save_state(chat_id, game_state, session)
+    sent = await _send_selection_window(callback, game_state, session)
+    if sent is None:
+        # Старое сообщение набора не удалено и состояние в БД осталось lobby.
+        await send_alarm(callback, "⚠️ Не удалось открыть окно выбора. Попробуйте снова.")
+        return
     await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
                                            f'{driver.title} Открывает окно выбора в игре "Гонки"')
     _schedule_deadline(callback.message.bot, chat_id, game_state)
-    await _send_selection_window(callback, game_state, session)
     await callback.answer("Окно выбора открыто на 10 минут")
-
-
-@router.callback_query(MyCallback.filter(F.action == "check_wheels"),
-                       flags={"check_driver": True})
-async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    wheels = driver.attributes.get("wheels", 0)
-    text = "дождевые шины (дают + к скорости во время дождя)" if wheels == 1 else "слики (лучшие на сухой трассе)" if wheels == 2 else "универсальные шины"
-    await send_alarm(callback, f"🛞 Сейчас на машине установлены {text}")
-
-
-@router.callback_query(MyCallback.filter(F.action == "set_wheels"),
-                       flags={"check_driver": True})
-async def set_wheels_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    game_state = await get_state(callback.message.chat.id, session)
-    if _selection_open(game_state) and driver.id in game_state.player_ids:
-        try:
-            game_state.set_wheels(driver, int(callback_data.spot_id))
-        except ValueError as error:
-            await send_alarm(callback, f"⚠️ {error}")
-            return
-        await save_state(callback.message.chat.id, game_state, session)
-        await callback.answer("Шины выбраны")
-        chat_id = _race_chat_id(callback, callback_data)
-        await _show_race_panel(callback, game_state, driver, session, chat_id)
-        await _refresh_public_status(callback.message.bot, chat_id, game_state, session)
-        return
-
-    wheels = callback_data.spot_id
-    driver.attributes["wheels"] = wheels
-    text = "Дождевые шины (дают + к скорости во время дождя)" if wheels == 1 else "Слики (лучшие на сухой трассе)" if wheels == 2 else "Универсальные шины"
-    await send_alarm(callback, f"🛞 {text} успешно установлены")
 
 
 async def _show_race_panel(callback, game_state: GameState, driver: Driver, session,
@@ -964,28 +977,6 @@ async def get_race_keyboard(game_state: GameState):
     if game_state.phase == "lobby" and players_count < MAX_PLAYERS:
         add_button(f"Участвовать (плата 💟 {FEE} кармы)", "join_race", 0, builder, style='primary')
         keyboard_sizes.append(1)
-
-    add_button(f"ℹ️ Проверить колеса 🛞🛞🛞🛞", "check_wheels", 0, builder)
-    keyboard_sizes.append(1)
-    # if players_count >= 30:
-    #     add_button("😇 Помочь сопернику", "race_help_opponent", 0, builder)
-    #     for i in range(1, players_count + 1):
-    #         add_button(f"😇 {i}", "race_help_opponent", 0, builder, spot_id=i)
-    #     add_button("😈 Сделать пакость", "race_joke_opponent", 0, builder)
-    #     for i in range(1, players_count + 1):
-    #         add_button(f"😈 {i}", "race_joke_opponent", 0, builder, spot_id=i)
-    #     if players_count > 6:
-    #         keyboard_sizes.append(1)
-    #         keyboard_sizes.append(int(players_count / 2))
-    #         keyboard_sizes.append(players_count - int(players_count / 2))
-    #         keyboard_sizes.append(1)
-    #         keyboard_sizes.append(int(players_count / 2))
-    #         keyboard_sizes.append(players_count - int(players_count / 2))
-    #     else:
-    #         keyboard_sizes.append(1)
-    #         keyboard_sizes.append(players_count)
-    #         keyboard_sizes.append(1)
-    #         keyboard_sizes.append(players_count)
 
     if game_state.phase == "lobby" and players_count >= MIN_PLAYERS:
         add_button("🏁 Начать гонку!", "start_race", 0, builder, style='danger')

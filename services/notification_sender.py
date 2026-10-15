@@ -13,6 +13,7 @@ from services.telegram_ui import (
     edit_content,
     edit_rich,
     event_message,
+    send_message_if_reachable,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,8 +135,10 @@ class NotificationSender:
             message += add_message
         logger.info(f"{driver_from.title} -> {driver_to.title}: {message.as_markdown()}")
         try:
-            await self.bot.send_message(chat_id=driver_to.chat_id, **message.as_kwargs(), reply_markup=keyboard)
-            return True
+            sent = await send_message_if_reachable(
+                self.bot, driver_to.chat_id, **message.as_kwargs(), reply_markup=keyboard
+            )
+            return sent is not None
         except Exception as e:
             logger.error(f"Error sending notification to {driver_to.title}: {e}")
             return False

@@ -22,6 +22,7 @@ from services.telegram_ui import (
     ephemeral_parameters,
     edit_content,
     edit,
+    send_message_if_reachable,
 )
 
 
@@ -130,6 +131,41 @@ class TelegramUiTests(unittest.IsolatedAsyncioTestCase):
                     fallback_text="Private status",
                 )
         bot.send_message.assert_not_awaited()
+
+    async def test_undeliverable_rich_message_is_ignored(self):
+        message = make_message()
+        rich = InputRichMessage(blocks=[InputRichBlockParagraph(text="Race")])
+        error = TelegramBadRequest(
+            method=SendRichMessage(chat_id=-100123, rich_message=rich),
+            message="Bad Request: user not found",
+        )
+        with patch.object(Message, "answer_rich", new_callable=AsyncMock, side_effect=error):
+            self.assertIsNone(await answer_rich(message, rich, fallback_text="Race"))
+
+    async def test_undeliverable_notification_does_not_interrupt_other_recipients(self):
+        bot = AsyncMock()
+        error = TelegramBadRequest(
+            method=SendRichMessage(
+                chat_id=42,
+                rich_message=InputRichMessage(blocks=[InputRichBlockParagraph(text="x")]),
+            ),
+            message="Bad Request: user not found",
+        )
+        bot.send_message.side_effect = [error, "sent"]
+        self.assertIsNone(await send_message_if_reachable(bot, 42, text="first"))
+        self.assertEqual(await send_message_if_reachable(bot, 43, text="second"), "sent")
+
+    async def test_other_notification_errors_are_not_ignored(self):
+        bot = AsyncMock()
+        bot.send_message.side_effect = TelegramBadRequest(
+            method=SendRichMessage(
+                chat_id=42,
+                rich_message=InputRichMessage(blocks=[InputRichBlockParagraph(text="x")]),
+            ),
+            message="message is too long",
+        )
+        with self.assertRaises(TelegramBadRequest):
+            await send_message_if_reachable(bot, 42, text="first")
 
     async def test_private_chat_does_not_receive_ephemeral_parameters(self):
         message = make_message("private")

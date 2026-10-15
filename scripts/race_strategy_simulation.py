@@ -1,7 +1,7 @@
 """Monte Carlo comparison of racing cards, without rendering GIF/MP4 files.
 
 Run from the repository root:
-    python scripts/race_strategy_simulation.py --runs 100000 --players 8,10,12 \
+    python scripts/race_strategy_simulation.py --runs 1000 --players 8,10,12 \
         --strategies all --output simulation_results
 
 Each scenario uses the production race resolver and common trial seeds.  The
@@ -25,7 +25,7 @@ from statistics import median
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.race_simulation import (  # noqa: E402
-    BOOST_BONUS, HINDER_PENALTY, HINDER_TARGETS, RACE_ENTRY_FEE,
+    BOOST_BONUS, GUARD_ABSORPTION, HINDER_PENALTY, HINDER_TARGETS, RACE_ENTRY_FEE,
     RACE_RULES_VERSION, SEGMENTS, SPEED_RANGES, RaceAction,
     generate_forecast, resolve_race_simulation,
 )
@@ -46,10 +46,10 @@ POPULATIONS = {
     "all_guard": (0, 0, 1),
 }
 CSV_FIELDS = (
-    "players", "strategy", "target_policy", "population", "guard_mode",
-    "segment_mode", "runs", "mean_place", "median_place", "win_rate",
+    "players", "strategy", "target_policy", "population",
+    "guard_absorption", "segment_mode", "runs", "mean_place", "median_place", "win_rate",
     "top3_rate", "prize_rate", "mean_prize", "median_prize", "min_prize",
-    "max_prize", "successful_hinders", "blocked_hinders", "blocked_incoming",
+    "max_prize", "successful_hinders", "reduced_hinders", "reduced_incoming",
     "affected_targets",
 )
 
@@ -149,10 +149,10 @@ def _counts(values: Counter, runs: int) -> float:
 def run_scenario(
         *,
         n: int, strategy: str, policy: str, population: str,
-        guard_mode: str, segment_mode: str, runs: int, seed: int,
+        segment_mode: str, runs: int, seed: int,
         opponent_hinder_targets: int, opponent_hinder_penalty: float,
         opponent_boost: float, sample_races: int = 3,
-        scale_targets: bool = False,
+        scale_targets: bool = False, guard_absorption: float = GUARD_ABSORPTION,
 ) -> tuple[dict, dict]:
     ranks: Counter = Counter()
     prizes: Counter = Counter()
@@ -175,8 +175,9 @@ def run_scenario(
         )
         result = resolve_race_simulation(
             players=range(n), wheels=wheels, weather_forecast=forecast,
-            actions=actions, seed=race_seed, guard_mode=guard_mode,
-            hinder_segment_mode=segment_mode, fee=RACE_ENTRY_FEE,
+            actions=actions, seed=race_seed,
+            guard_absorption=guard_absorption, hinder_segment_mode=segment_mode,
+            fee=RACE_ENTRY_FEE,
         )
         place = result.winners.index(0) + 1
         prize = result.prizes.get(place, 0)
@@ -188,9 +189,9 @@ def run_scenario(
             if event["kind"] == "hinder":
                 if event["actor"] == 0:
                     statuses[f"outgoing_{event['status']}"] += 1
-                if event["target"] == 0 and event["status"] == "blocked":
-                    statuses["blocked_incoming"] += 1
-                if event["actor"] == 0 and event["status"] == "success":
+                if event["target"] == 0 and event["status"] == "reduced":
+                    statuses["reduced_incoming"] += 1
+                if event["actor"] == 0 and event["penalty_applied"] > 0:
                     statuses[f"affected_{event['target']}"] += 1
         if len(samples) < sample_races:
             samples.append({
@@ -209,7 +210,8 @@ def run_scenario(
             })
     summary = {
         "players": n, "strategy": strategy, "target_policy": policy,
-        "population": population, "guard_mode": guard_mode,
+        "population": population,
+        "guard_absorption": guard_absorption,
         "segment_mode": segment_mode, "runs": runs,
         "mean_place": _counts(ranks, runs),
         "median_place": median(sorted(place for place, count in ranks.items()
@@ -221,9 +223,11 @@ def run_scenario(
         "median_prize": median(sorted(prize for prize, count in prizes.items()
                                       for _ in range(count))),
         "min_prize": min(prizes), "max_prize": max(prizes),
-        "successful_hinders": statuses["outgoing_success"] / runs,
-        "blocked_hinders": statuses["outgoing_blocked"] / runs,
-        "blocked_incoming": statuses["blocked_incoming"] / runs,
+        "successful_hinders": (
+                                      statuses["outgoing_success"] + statuses["outgoing_reduced"]
+                              ) / runs,
+        "reduced_hinders": statuses["outgoing_reduced"] / runs,
+        "reduced_incoming": statuses["reduced_incoming"] / runs,
         "affected_targets": sum(
             value for key, value in statuses.items() if key.startswith("affected_")
         ) / runs,
@@ -255,13 +259,13 @@ def assess_balance(rows: list[dict], reference_strategy: str = "boost_5") -> lis
     """
     reference = {
         (row["players"], row["target_policy"], row["population"],
-         row["guard_mode"], row["segment_mode"]): row
+         row["guard_absorption"], row["segment_mode"]): row
         for row in rows if row["strategy"] == reference_strategy
     }
     assessments = []
     for row in rows:
         key = (row["players"], row["target_policy"], row["population"],
-               row["guard_mode"], row["segment_mode"])
+               row["guard_absorption"], row["segment_mode"])
         baseline = reference.get(key)
         if baseline is None or row["strategy"] == reference_strategy:
             continue
@@ -275,7 +279,8 @@ def assess_balance(rows: list[dict], reference_strategy: str = "boost_5") -> lis
             win_ratio = None
         assessments.append({
             "players": row["players"], "target_policy": row["target_policy"],
-            "population": row["population"], "guard_mode": row["guard_mode"],
+            "population": row["population"],
+            "guard_absorption": row["guard_absorption"],
             "segment_mode": row["segment_mode"], "strategy": row["strategy"],
             "reference_strategy": reference_strategy,
             "payout_ratio": payout_ratio,
@@ -290,7 +295,7 @@ def assess_balance(rows: list[dict], reference_strategy: str = "boost_5") -> lis
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runs", type=int, default=100000, help="trials per combination")
+    parser.add_argument("--runs", type=int, default=1000, help="trials per combination")
     parser.add_argument("--players", default="8,9,10,11,12", help="comma-separated counts")
     parser.add_argument("--strategies", default="all", help="all or comma-separated names")
     parser.add_argument("--seed", type=int, default=20261014)
@@ -301,7 +306,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="cap target count at floor((players - 1) / 2)")
     parser.add_argument("--target-policy", default="random",
                         help="all, random, strongest, upper_half")
-    parser.add_argument("--guard-mode", default="all", help="all, one, both")
+    parser.add_argument(
+        "--guard-absorption", default=str(GUARD_ABSORPTION),
+        help="fraction of incoming hinder damage absorbed; comma-separated values",
+    )
     parser.add_argument("--segment-mode", default="shared",
                         help="shared, independent, both")
     parser.add_argument("--population", default="neutral",
@@ -322,9 +330,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             or abs(round(args.boost_bonus * 100) - args.boost_bonus * 100) > 1e-8):
         parser.error("bonus and penalty must be finite whole percentage points")
     args.policies = _choices(args.target_policy, {"random", "strongest", "upper_half"})
-    if args.guard_mode not in ("all", "one", "both"):
-        parser.error("guard-mode must be all, one, or both")
-    args.guards = ["all", "one"] if args.guard_mode == "both" else [args.guard_mode]
+    try:
+        args.guard_absorptions = [
+            float(value) for value in args.guard_absorption.split(",")
+        ]
+    except ValueError:
+        parser.error("guard-absorption must be a comma-separated list of numbers")
+    if (not args.guard_absorptions
+            or any(not 0 <= value < 1 for value in args.guard_absorptions)):
+        parser.error("guard-absorption values must be between 0 (inclusive) and 1 (exclusive)")
     args.segments = _choices(
         "shared,independent" if args.segment_mode == "both" else args.segment_mode,
         {"shared", "independent"},
@@ -346,25 +360,27 @@ def main(argv: list[str] | None = None) -> tuple[list[dict], dict]:
     summaries, details = [], []
     for n in args.players:
         for population in args.populations:
-            for guard in args.guards:
+            for guard_absorption in args.guard_absorptions:
                 for segment in args.segments:
                     for policy in args.policies:
                         for strategy in args.selected_strategies:
                             summary, detail = run_scenario(
                                 n=n, strategy=strategy, policy=policy,
-                                population=population, guard_mode=guard,
+                                population=population,
                                 segment_mode=segment, runs=args.runs, seed=args.seed,
                                 opponent_hinder_targets=args.hinder_targets,
                                 opponent_hinder_penalty=args.hinder_penalty,
                                 opponent_boost=args.boost_bonus,
                                 sample_races=args.sample_races,
                                 scale_targets=args.scale_targets,
+                                guard_absorption=guard_absorption,
                             )
                             summaries.append(summary)
                             details.append(detail)
                             print(
                                 f"{n:2d} {population:12s} {policy:10s} "
-                                f"{guard:3s}/{segment:11s} {strategy:14s} "
+                                f"absorb={guard_absorption:.1f}/{segment:11s} "
+                                f"{strategy:14s} "
                                 f"place={summary['mean_place']:.2f} "
                                 f"win={summary['win_rate']:.1%} "
                                 f"top3={summary['top3_rate']:.1%} "
@@ -378,9 +394,12 @@ def main(argv: list[str] | None = None) -> tuple[list[dict], dict]:
             "entry_fee": RACE_ENTRY_FEE, "boost_bonus": args.boost_bonus,
             "hinder_penalty": args.hinder_penalty,
             "hinder_targets": args.hinder_targets, "segments": SEGMENTS,
-            "guard_mode": args.guards[0] if len(args.guards) == 1 else "both",
+            "guard_absorption": (
+                args.guard_absorptions[0]
+                if len(args.guard_absorptions) == 1 else args.guard_absorptions
+            ),
             "scale_targets": args.scale_targets,
-            "guard_modes": args.guards, "segment_modes": args.segments,
+            "segment_modes": args.segments,
             "speed_ranges": SPEED_RANGES,
             "strategy_parameters": {
                 strategy: {
@@ -395,7 +414,10 @@ def main(argv: list[str] | None = None) -> tuple[list[dict], dict]:
                 "strongest/upper_half use forecast and private tire knowledge "
                 "as an optimistic upper bound, not information available in the bot"
             ),
-            "stack_cap": "one successful incoming hinder per racer",
+            "hinder_stacking": (
+                "all incoming hindrances are cumulative; guard absorbs the "
+                "configured fraction of each penalty without fully blocking it"
+            ),
         },
         "seed": args.seed, "runs_per_combination": args.runs,
         "scenarios": details,

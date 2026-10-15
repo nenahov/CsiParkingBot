@@ -6,13 +6,14 @@ import random
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 _script = Path(__file__).resolve().parents[1] / "scripts" / "race_strategy_simulation.py"
 _spec = importlib.util.spec_from_file_location("race_strategy_simulation", _script)
 race_tool = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(race_tool)
 from utils.race_simulation import (
-    RACE_ENTRY_FEE, SPEED_RANGES, RaceAction, allocate_prizes,
+    RACE_ENTRY_FEE, SPEED_RANGES, RaceAction, _resolve_actions, allocate_prizes,
     resolve_race_simulation,
 )
 
@@ -75,7 +76,7 @@ class RaceSimulationTests(unittest.TestCase):
                     f"racer={racer}, frame={frame}",
                 )
 
-    def test_guard_and_stack_cap(self):
+    def test_guard_reduces_every_attack_without_blocking(self):
         actions = {
             0: RaceAction("hinder", targets=(2, 3)),
             1: RaceAction("hinder", targets=(2,)),
@@ -87,19 +88,57 @@ class RaceSimulationTests(unittest.TestCase):
         self.assertEqual(
             [e["status"] for e in result.events
              if e["kind"] == "hinder" and e["target"] == 2],
-            ["blocked", "blocked"],
+            ["reduced", "reduced"],
         )
         self.assertEqual(
             sum(e["status"] == "success" for e in result.events
                 if e["kind"] == "hinder" and e["target"] == 3), 1,
         )
-        one = resolve_race_simulation(**args, guard_mode="one")
-        self.assertEqual(
-            sum(e["status"] == "success" for e in one.events
-                if e["kind"] == "hinder" and e["target"] == 2), 1,
-        )
+        target_two = [
+            e for e in result.events
+            if e["kind"] == "hinder" and e["target"] == 2
+        ]
+        self.assertTrue(all(e["guarded"] for e in target_two))
+        self.assertTrue(all(e["penalty_applied"] == .05 for e in target_two))
 
-    def test_multiple_attacks_never_stack(self):
+        three_attacks = resolve_race_simulation(
+            range(5), [0] * 5, FORECAST,
+            {
+                0: RaceAction("hinder", targets=(4,)),
+                1: RaceAction("hinder", targets=(4,)),
+                2: RaceAction("hinder", targets=(4,)),
+                4: RaceAction("guard"),
+            },
+            123,
+        )
+        target_three = [
+            e for e in three_attacks.events
+            if e["kind"] == "hinder" and e["target"] == 4
+        ]
+        self.assertEqual(sum(e["status"] == "reduced" for e in target_three), 3)
+        self.assertTrue(all(e["penalty_applied"] > 0 for e in target_three))
+        for absorption in (.5, .7, .8):
+            with self.subTest(absorption=absorption):
+                rng = Mock()
+                rng.randrange.return_value = 0
+                modifiers, events = _resolve_actions(
+                    rng, 4,
+                    {
+                        0: RaceAction("hinder", (3,)),
+                        1: RaceAction("hinder", (3,)),
+                        2: RaceAction("hinder", (3,)),
+                        3: RaceAction("guard"),
+                    },
+                    guard_absorption=absorption,
+                    hinder_segment_mode="shared",
+                )
+                self.assertAlmostEqual(
+                    modifiers[3][0], -3 * .10 * (1 - absorption),
+                )
+                self.assertEqual([e["status"] for e in events], ["reduced"] * 3)
+                self.assertTrue(all(e["penalty_applied"] > 0 for e in events))
+
+    def test_multiple_attacks_stack(self):
         result = resolve_race_simulation(
             range(4), [0] * 4, FORECAST,
             {0: RaceAction("hinder", (3,)),
@@ -108,8 +147,27 @@ class RaceSimulationTests(unittest.TestCase):
         )
         statuses = [e["status"] for e in result.events
                     if e["kind"] == "hinder"]
-        self.assertEqual(statuses.count("success"), 1)
-        self.assertEqual(statuses.count("stack_cap"), 2)
+        self.assertEqual(statuses, ["success", "success", "success"])
+        # Check the speed modifiers too, not only the event log.
+        rng = Mock()
+        rng.randrange.return_value = 0
+        modifiers, _ = _resolve_actions(
+            rng, 4,
+            {actor: RaceAction("hinder", (3,)) for actor in range(3)},
+            guard_absorption=0.5, hinder_segment_mode="shared",
+        )
+        self.assertAlmostEqual(modifiers[3][0], -.30)
+        self.assertEqual(modifiers[3][1:], [0.0, 0.0])
+
+    def test_mass_attack_does_not_reverse_car(self):
+        result = resolve_race_simulation(
+            range(12), [0] * 12, FORECAST,
+            {actor: RaceAction("hinder", (11,)) for actor in range(11)}, 117,
+        )
+        self.assertEqual(
+            sum(event["status"] == "success" for event in result.events), 11,
+        )
+        self.assertTrue(all(span.speed > 0 for span in result.spans[11]))
 
     def test_invalid_target_and_duplicate_are_rejected(self):
         for targets in ((0,), (1, 1), (99,)):
@@ -156,12 +214,12 @@ class StrategyReportTests(unittest.TestCase):
         self.assertEqual(len(actions[0].targets), 5)
         self.assertTrue(all(actions[i].kind == "guard" for i in range(1, 8)))
 
-    def test_guard_mode_all_is_not_mistaken_for_both(self):
+    def test_guard_absorption_accepts_multiple_values(self):
         args = race_tool.parse_args([
             "--runs", "1", "--players", "8", "--target-policy", "random",
-            "--guard-mode", "all", "--population", "neutral",
+            "--guard-absorption", "0.5,0.7,0.8", "--population", "neutral",
         ])
-        self.assertEqual(args.guards, ["all"])
+        self.assertEqual(args.guard_absorptions, [.5, .7, .8])
 
     def test_csv_json_and_summary_match(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -169,7 +227,7 @@ class StrategyReportTests(unittest.TestCase):
             rows, report = race_tool.main([
                 "--runs", "10", "--players", "8,10,12", "--seed", "73",
                 "--strategies", "neutral,boost_5,hinder_3_10",
-                "--target-policy", "random", "--guard-mode", "all",
+                "--target-policy", "random", "--guard-absorption", "0.5",
                 "--population", "neutral", "--sample-races", "1",
                 "--output", str(output),
             ])
@@ -180,7 +238,7 @@ class StrategyReportTests(unittest.TestCase):
             self.assertEqual({row["players"] for row in rows}, {8, 10, 12})
             self.assertEqual(disk_report, json.loads(json.dumps(report)))
             self.assertEqual(report["rules"]["entry_fee"], 50)
-            self.assertEqual(report["rules"]["guard_mode"], "all")
+            self.assertEqual(report["rules"]["guard_absorption"], .5)
             self.assertIn("version", report["rules"])
             self.assertEqual(
                 report["rules"]["strategy_parameters"]["hinder_3_10"]["targets"], 3,
@@ -191,7 +249,7 @@ class StrategyReportTests(unittest.TestCase):
                 self.assertEqual(sum(scenario["rank_histogram"].values()), 10)
             second, _ = race_tool.run_scenario(
                 n=8, strategy="boost_5", policy="random",
-                population="neutral", guard_mode="all", segment_mode="shared",
+                population="neutral", segment_mode="shared",
                 runs=10, seed=73, opponent_hinder_targets=3,
                 opponent_hinder_penalty=.10, opponent_boost=.12,
             )

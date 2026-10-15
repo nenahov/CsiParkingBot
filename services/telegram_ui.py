@@ -9,6 +9,7 @@ Message/CallbackQuery и не пытались редактировать epheme
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
@@ -18,6 +19,8 @@ from aiogram.types import (
     InputRichMessage,
     Message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def event_message(event: Message | CallbackQuery) -> Message | None:
@@ -89,6 +92,29 @@ def _is_feature_unsupported(error: TelegramBadRequest) -> bool:
     return feature_error and unsupported
 
 
+def is_undeliverable_error(error: TelegramAPIError) -> bool:
+    """Ошибки Telegram, означающие, что адресат недоступен."""
+
+    description = str(error).lower()
+    return any(marker in description for marker in (
+        "user not found",
+        "chat not found",
+        "bot was blocked by the user",
+        "user is deactivated",
+    ))
+
+
+async def send_message_if_reachable(bot, chat_id: int, **kwargs: Any) -> Any:
+    """Не прерывать обработку, если отдельному адресату нельзя отправить сообщение."""
+
+    try:
+        return await bot.send_message(chat_id=chat_id, **kwargs)
+    except TelegramAPIError as error:
+        if not is_undeliverable_error(error):
+            raise
+        return None
+
+
 async def answer(
         event: Message | CallbackQuery,
         *,
@@ -114,6 +140,8 @@ async def answer(
     try:
         return await message.answer(**send_kwargs)
     except TelegramBadRequest as error:
+        if is_undeliverable_error(error):
+            return None
         if not _is_feature_unsupported(error):
             raise
         if params is None:
@@ -174,6 +202,8 @@ async def answer_rich(
     try:
         return await message.answer_rich(rich_message, **send_kwargs)
     except TelegramBadRequest as error:
+        if is_undeliverable_error(error):
+            return None
         if not _is_feature_unsupported(error):
             raise
         if fallback_text is None:
@@ -192,6 +222,10 @@ async def answer_rich(
             )
         except TelegramAPIError:
             # Ошибка rich/ephemeral и недоступная личка — fail closed.
+            logger.exception(
+                "Не удалось отправить fallback rich-сообщения в чат %s",
+                target_chat_id,
+            )
             return None
 
 
@@ -293,4 +327,4 @@ async def edit_rich(
 async def send_private_notification(bot, chat_id: int, **kwargs: Any) -> Any:
     """Отправить durable-уведомление в личный чат пользователя."""
 
-    return await bot.send_message(chat_id=chat_id, **kwargs)
+    return await send_message_if_reachable(bot, chat_id, **kwargs)

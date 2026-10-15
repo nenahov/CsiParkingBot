@@ -13,12 +13,14 @@ from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 RACE_ENTRY_FEE = 50
-RACE_RULES_VERSION = "risk-intrigue-2"
+RACE_RULES_VERSION = "risk-intrigue-5"
 BOOST_BONUS = 0.05
 HINDER_TARGETS = 5
 HINDER_PENALTY = 0.10
+GUARD_ABSORPTION = 0.5
 PLACE_WEIGHTS = (35, 25, 17, 12, 8)
 SEGMENTS = 3
+MIN_SPEED_FACTOR = 0.01  # Keep cars moving even under a coordinated attack.
 # Indexed by weather (cloud, rain, sun), then tire (universal, rain, slick).
 SPEED_RANGES = (
     ((.15, .40), (.00, .10), (.05, .20)),
@@ -134,10 +136,9 @@ def _weather(
 
 def _resolve_actions(
         rng: random.Random, count: int, actions: Mapping[int, RaceAction],
-        *, guard_mode: str, hinder_segment_mode: str,
+        *, guard_absorption: float, hinder_segment_mode: str,
 ) -> tuple[list[list[float]], list[dict]]:
     modifiers = [[0.0] * SEGMENTS for _ in range(count)]
-    incoming: list[list[dict]] = [[] for _ in range(count)]
     events: list[dict] = []
     for actor in sorted(actions):
         if not 0 <= actor < count:
@@ -160,26 +161,20 @@ def _resolve_actions(
                 segment = (shared_segment if hinder_segment_mode == "shared"
                            else rng.randrange(SEGMENTS))
                 event = {"kind": "hinder", "actor": actor, "target": target,
-                         "segment": segment, "status": "pending",
+                         "segment": segment,
                          "penalty": action.penalty}
+                guarded = actions.get(target, RaceAction()).kind == "guard"
+                event["guarded"] = guarded
+                event["penalty_applied"] = action.penalty * (
+                    1 - guard_absorption if guarded else 1
+                )
+                event["status"] = (
+                    "reduced" if guarded and guard_absorption > 0 else "success"
+                )
+                modifiers[target][segment] -= event["penalty_applied"]
                 events.append(event)
-                incoming[target].append(event)
-    for target, attacks in enumerate(incoming):
-        if not attacks:
-            continue
-        rng.shuffle(attacks)  # no advantage from player/iteration order
-        if actions.get(target, RaceAction()).kind == "guard":
-            protected = attacks if guard_mode == "all" else attacks[:1]
-            for attack in protected:
-                attack["status"] = "blocked"
-        for attack in attacks:
-            if attack["status"] == "pending":
-                attack["status"] = "success"
-                modifiers[target][attack["segment"]] -= attack["penalty"]
-                break
-        for attack in attacks:
-            if attack["status"] == "pending":
-                attack["status"] = "stack_cap"
+                # Every attack contributes; guard reduces each one but never
+                # fully blocks it. Penalties on the same segment add up.
     return modifiers, events
 
 
@@ -194,7 +189,7 @@ def resolve_race_simulation(
         track_distance: float = 1700.0,
         car_width: float = 100.0,
         finish_margin: float = 10.0,
-        guard_mode: str = "all",
+        guard_absorption: float = GUARD_ABSORPTION,
         hinder_segment_mode: str = "shared",
         fee: int = RACE_ENTRY_FEE,
 ) -> RaceSimulationResult:
@@ -208,8 +203,10 @@ def resolve_race_simulation(
         raise ValueError("Provide at least two players and one valid tire per player")
     if frame_count <= 0 or track_distance <= finish_margin or car_width <= 0:
         raise ValueError("Invalid track dimensions or frame count")
-    if guard_mode not in ("all", "one") or hinder_segment_mode not in ("shared", "independent"):
-        raise ValueError("Invalid guard or segment mode")
+    if hinder_segment_mode not in ("shared", "independent"):
+        raise ValueError("Invalid segment mode")
+    if not 0 <= guard_absorption < 1:
+        raise ValueError("Guard absorption must be between 0 (inclusive) and 1 (exclusive)")
     if weather_forecast is None:
         weather_forecast = generate_forecast(seed)
     forecast = {str(i): list(weather_forecast[str(i)]) for i in (1, 2)}
@@ -219,7 +216,7 @@ def resolve_race_simulation(
     weather = _weather(random.Random(seed ^ 0xFEED), list(wheels), forecast)
     modifiers, events = _resolve_actions(
         random.Random(seed ^ 0xAC710), count, actions or {},
-        guard_mode=guard_mode, hinder_segment_mode=hinder_segment_mode,
+        guard_absorption=guard_absorption, hinder_segment_mode=hinder_segment_mode,
     )
 
     spans: list[list[SpeedSpan]] = []
@@ -239,9 +236,10 @@ def resolve_race_simulation(
         lo, hi = SPEED_RANGES[weather[segment]][tire]
         weather_bonus = rng.uniform(lo, hi)
         factor += segment * rng.uniform(0, .02)
-        speed = (track_distance + car_width) * (
-                factor + weather_bonus + modifiers[racer][segment]
-        ) / frame_count
+        speed = initial_speed * max(
+            MIN_SPEED_FACTOR,
+            factor + weather_bonus + modifiers[racer][segment],
+        )
         racer_spans.append(SpeedSpan(frame, position, speed))
         while position < threshold and frame < frame_count - 1:
             boundary = min((segment + 1) * track_distance / SEGMENTS, threshold)
@@ -255,9 +253,10 @@ def resolve_race_simulation(
             lo, hi = SPEED_RANGES[weather[segment]][tire]
             weather_bonus = rng.uniform(lo, hi)
             factor += segment * rng.uniform(0, .02)
-            speed = (track_distance + car_width) * (
-                    factor + weather_bonus + modifiers[racer][segment]
-            ) / frame_count
+            speed = initial_speed * max(
+                MIN_SPEED_FACTOR,
+                factor + weather_bonus + modifiers[racer][segment],
+            )
             racer_spans.append(SpeedSpan(frame, position, speed))
         spans.append(racer_spans)
         finish_frames.append(frame if position >= threshold else None)
