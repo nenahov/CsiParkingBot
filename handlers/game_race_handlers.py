@@ -848,7 +848,6 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
     _unschedule_deadline(chat_id)
     await bot.send_animation(
         chat_id=chat_id, animation=FSInputFile(f"race_{chat_id}.mp4"),
-        supports_streaming=True,
     )
     try:
         await bot.send_rich_message(
