@@ -29,8 +29,8 @@ from services.telegram_ui import answer_rich, edit_rich
 from utils.cars_generator import draw_start_race_track, create_race_gif
 from utils.game_race_utils import GameState, generate_game_with_weather_forecast
 from utils.race_simulation import (
-    GUARD_ABSORPTION, RACE_ENTRY_FEE, RaceAction, allocate_prizes,
-    resolve_race_simulation,
+    NITRO_RULES_VERSION, RACE_ENTRY_FEE, RaceAction, allocate_prizes,
+    initial_nitro, resolve_race_simulation,
 )
 
 MIN_PLAYERS = 7
@@ -43,15 +43,18 @@ _race_scheduler = None
 
 
 def register_race_scheduler(scheduler):
+    """Подключить планировщик автоматического старта по дедлайну."""
     global _race_scheduler
     _race_scheduler = scheduler
 
 
 def _deadline_job_id(chat_id: int):
+    """Сформировать уникальный идентификатор задачи для чата."""
     return f"race-deadline-{chat_id}"
 
 
 def _schedule_deadline(bot, chat_id: int, game_state: GameState):
+    """Создать или обновить задачу завершения окна выбора."""
     if _race_scheduler is None or game_state.phase != "selection":
         return
     deadline = datetime.fromisoformat(game_state.selection_deadline)
@@ -65,18 +68,20 @@ def _schedule_deadline(bot, chat_id: int, game_state: GameState):
 
 
 def _unschedule_deadline(chat_id: int):
+    """Удалить задачу после досрочного или обычного старта."""
     if _race_scheduler and _race_scheduler.get_job(_deadline_job_id(chat_id)):
         _race_scheduler.remove_job(_deadline_job_id(chat_id))
 
 
 async def restore_race_deadlines(bot, session):
-    """Восстановить только активные таймеры после перезапуска процесса."""
+    """Восстановить таймеры и перевести открытые старые гонки на новые правила."""
     raw = await ParamService(session).get_parameter("race_state", "{}")
     states = json.loads(raw)
     if not isinstance(states, dict):
         logger.warning("Некорректный формат race_state: ожидался JSON-объект")
         return
 
+    migrated = []
     for chat_id, data in states.items():
         # Запись может быть пустой после завершения гонки или сохранена в
         # формате предыдущей версии игры. Такие записи не являются активными
@@ -85,6 +90,9 @@ async def restore_race_deadlines(bot, session):
             continue
         try:
             state = GameState.from_dict(data)
+            if state.migrate_legacy_selection(datetime.now()):
+                states[chat_id] = state.to_dict()
+                migrated.append(chat_id)
             _schedule_deadline(bot, int(chat_id), state)
         except (KeyError, TypeError, ValueError):
             logger.warning(
@@ -92,16 +100,38 @@ async def restore_race_deadlines(bot, session):
                 chat_id,
                 exc_info=True,
             )
+    if migrated:
+        await ParamService(session).set_parameter(
+            "race_state", json.dumps(states, ensure_ascii=False),
+        )
+        await session.commit()
+        for chat_id in migrated:
+            try:
+                await bot.send_message(
+                    chat_id=int(chat_id),
+                    text="🏁 Правила гонки обновились. Старые карты сброшены, "
+                         "шины сохранены. У вас новый час, чтобы выбрать перевозки "
+                         "нитро, защиту и план гонки.",
+                )
+            except TelegramAPIError:
+                logger.warning("Не удалось уведомить чат %s о новых правилах", chat_id)
 
 
 async def get_state(chat_id: int, session) -> GameState | None:
+    """Загрузить состояние гонки чата, отвергая некорректный старый выбор."""
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
     state_dict = states.get(str(chat_id), None)
     if not isinstance(state_dict, dict) or "phase" not in state_dict:
         return None
     try:
-        return GameState.from_dict(state_dict)
+        state = GameState.from_dict(state_dict)
+        if state.phase == "selection" and state.rules_version != NITRO_RULES_VERSION:
+            # При запуске такое состояние обычно мигрирует. Не смешиваем
+            # старые карты с расчётом нитро, если миграция не состоялась.
+            logger.warning("Гонка %s ожидает миграции правил при запуске", chat_id)
+            return None
+        return state
     except (KeyError, TypeError, ValueError):
         logger.warning(
             "Некорректный race_state для чата %s; считаем игру неактивной",
@@ -112,6 +142,7 @@ async def get_state(chat_id: int, session) -> GameState | None:
 
 
 async def save_state(chat_id: int, game_state: GameState, session):
+    """Сохранить состояние одной гонки среди состояний всех чатов."""
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
     states[str(chat_id)] = game_state.to_dict()
@@ -119,6 +150,7 @@ async def save_state(chat_id: int, game_state: GameState, session):
 
 
 async def remove_state(chat_id: int, session):
+    """Убрать завершённую гонку из хранилища состояний."""
     race_state = await ParamService(session).get_parameter('race_state', '{}')
     states = json.loads(race_state)
     states[str(chat_id)] = None
@@ -127,6 +159,7 @@ async def remove_state(chat_id: int, session):
 
 def _callback(action: str, user_id: int, *, spot_id=None, event_type=None,
               bool_value=None, chat_id=None):
+    """Упаковать действие кнопки вместе с водителем и исходным чатом."""
     return MyCallback(
         action=action, user_id=user_id, spot_id=spot_id, day_num=chat_id,
         event_type=event_type, bool_value=bool_value,
@@ -134,6 +167,7 @@ def _callback(action: str, user_id: int, *, spot_id=None, event_type=None,
 
 
 def _table_cell(text, *, header=False, align="left"):
+    """Собрать ячейку компактной таблицы Telegram."""
     return RichBlockTableCell(
         text=text, align="center" if header else align, valign="middle",
         is_header=True if header else None,
@@ -141,6 +175,7 @@ def _table_cell(text, *, header=False, align="left"):
 
 
 def _driver_mention(driver: Driver, *, compact=False):
+    """Создать упоминание водителя, при необходимости сократив подпись."""
     title = driver.title
     if compact and len(title) > 12:
         title = f"{title[:11]}…"
@@ -151,18 +186,12 @@ def _driver_mention(driver: Driver, *, compact=False):
 
 
 def _wheel_icon(wheels):
+    """Вернуть значок выбранного типа шин."""
     return {0: "🛞", 1: "🌧️", 2: "☀️"}.get(wheels, "—")
 
 
-def _action_icon(action: RaceAction | None):
-    if action is None:
-        return "—"
-    return {"neutral": "➖", "boost": "⚡", "hinder": "🎯", "guard": "🛡️"}.get(
-        action.kind, "—"
-    )
-
-
 def _deadline_text(game_state: GameState):
+    """Показать время закрытия выбора в коротком формате."""
     if not game_state.selection_deadline:
         return "окно выбора не открыто"
     deadline = datetime.fromisoformat(game_state.selection_deadline)
@@ -170,6 +199,7 @@ def _deadline_text(game_state: GameState):
 
 
 def _selection_open(game_state: GameState | None) -> bool:
+    """Проверить, можно ли ещё менять личное решение."""
     return (
             game_state is not None and game_state.phase == "selection"
             and not game_state.deadline_reached(datetime.now())
@@ -177,6 +207,7 @@ def _selection_open(game_state: GameState | None) -> bool:
 
 
 def _race_chat_id(callback: CallbackQuery, callback_data: MyCallback | None = None) -> int:
+    """Найти групповой чат гонки даже из личной панели водителя."""
     return (
         callback_data.day_num
         if callback_data is not None and callback_data.day_num is not None
@@ -185,6 +216,7 @@ def _race_chat_id(callback: CallbackQuery, callback_data: MyCallback | None = No
 
 
 def _public_race_message(game_state: GameState, players, *, admin_ready=False):
+    """Показать только состав и подтверждения, не раскрывая тайный выбор."""
     mentions = []
     for index, player in enumerate(players):
         if index:
@@ -193,25 +225,19 @@ def _public_race_message(game_state: GameState, players, *, admin_ready=False):
 
     rows = [[
         _table_cell("👤", header=True),
-        _table_cell("🛞", header=True),
-        _table_cell("🃏", header=True),
         _table_cell("✓", header=True),
     ]]
     for player in players:
-        wheel = game_state.wheels.get(str(player.id), game_state.wheels.get(player.id))
-        action = game_state.actions.get(player.id)
         rows.append([
             _table_cell(_driver_mention(player, compact=True)),
-            _table_cell(_wheel_icon(wheel)),
-            _table_cell(_action_icon(action)),
             _table_cell("✅" if player.id in game_state.confirmed else "…", align="center"),
         ])
 
     blocks = [
-        InputRichBlockSectionHeading(text="🏁 Гонка: риск и интриги", size=1),
+        InputRichBlockSectionHeading(text="🏁 Гонка: нитро и интриги", size=1),
         InputRichBlockParagraph(text=[
             "Участники: ", *mentions,
-            f"\n⏱ Выбор шин и карты до {_deadline_text(game_state)}.",
+            f"\n⏱ Тайный выбор до {_deadline_text(game_state)}.",
             "\nНажмите «🎮 Мой выбор», чтобы открыть личную панель.",
         ]),
         InputRichBlockTable(
@@ -237,11 +263,13 @@ def _public_race_message(game_state: GameState, players, *, admin_ready=False):
     return InputRichMessage(blocks=blocks)
 
 
-def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None):
+def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None,
+                   picker=None):
+    """Собрать личную панель шин, перевозок, защиты и плана гонки."""
     wheel = game_state.wheels.get(str(driver.id), game_state.wheels.get(driver.id))
-    action = game_state.actions.get(driver.id)
-    target_count = game_state.target_count()
-    selected_targets = set(action.targets) if action and action.kind == "hinder" else set()
+    action = game_state.actions.get(driver.id, RaceAction(kind="nitro"))
+    names = {player.id: player.title[:12] for player in players}
+    count = game_state.target_count()
 
     wheel_rows = [[
         _table_cell("Шины", header=True), _table_cell("Выбор", header=True),
@@ -258,64 +286,87 @@ def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None)
             )), align="center"),
         ])
 
-    card_rows = [[
-        _table_cell("Карта", header=True), _table_cell("Эффект", header=True),
-        _table_cell("Выбор", header=True),
-    ]]
-    card_options = (
-        ("neutral", "➖ Без карты", "—"),
-        ("boost", "⚡ Форсаж", "+5% ×1"),
-        ("hinder", "🎯 Помеха", f"−10% ×{target_count}"),
-        ("guard", "🛡️ Защита", f"−{GUARD_ABSORPTION:.0%} 🎯"),
-    )
-    for kind, title, effect in card_options:
-        card_rows.append([
+    transfer_rows = [[_table_cell("#", header=True),
+                      _table_cell("Забрать у", header=True),
+                      _table_cell("Передать", header=True)]]
+    for slot in range(count):
+        source, recipient = (action.transfers[slot] if slot < len(action.transfers)
+                             else (-1, -1))
+        transfer_rows.append([
+            _table_cell(str(slot + 1)),
+            *(_table_cell(RichTextButton(button=RichMessageButton(
+                text=names.get(target, "Выбрать"),
+                callback_data=_callback("race_pick", driver.chat_id,
+                                        event_type=f"{role}{slot}", chat_id=chat_id),
+            )), align="center")
+                for target, role in ((source, "s"), (recipient, "r"))),
+        ])
+    plans = (("early", "🚀 Рывок"), ("steady", "⚖️ Ровно"),
+             ("late", "🏁 Финиш"))
+    plan_rows = [[_table_cell("План", header=True),
+                  _table_cell("Выбор", header=True)]]
+    for key, title in plans:
+        plan_rows.append([
             _table_cell(title),
-            _table_cell(effect),
             _table_cell(RichTextButton(button=RichMessageButton(
-                text="✅" if action and action.kind == kind else "Выбрать",
-                callback_data=_callback("race_action", driver.chat_id,
-                                        event_type=kind, chat_id=chat_id),
+                text="✅" if action.kind == "nitro" and action.plan == key else "Выбрать",
+                callback_data=_callback("race_plan", driver.chat_id,
+                                        event_type=key, chat_id=chat_id),
             )), align="center"),
         ])
-
     blocks = [
         InputRichBlockSectionHeading(text="🎮 Ваш выбор", size=1),
         InputRichBlockParagraph(text=(
-            f"{driver.title}: шины {_wheel_icon(wheel)}, карта {_action_icon(action)}."
+            f"{driver.title}: шины {_wheel_icon(wheel)}. "
+            f"Начальный запас: {initial_nitro(len(players))} нитро."
         )),
         InputRichBlockTable(
             cells=wheel_rows, is_bordered=True, is_striped=True, is_compact=True,
         ),
         InputRichBlockTable(
-            cells=card_rows, is_bordered=True, is_striped=True, is_compact=True,
+            cells=transfer_rows, is_bordered=True, is_striped=True, is_compact=True,
         ),
         InputRichBlockParagraph(
-            text="⚡ себе на случайном участке · 🎯 на общем случайном участке "
-                 f"(помехи складываются) · 🛡️ ослабляет каждую помеху "
-                 f"на {GUARD_ABSORPTION:.0%}"
+            text="Каждая строка переносит 1 нитро. Если кражу заблокировали, "
+                 "отдаёте своё; если подарок заблокировали, нитро остаётся вам."
         ),
     ]
-    if action and action.kind == "hinder":
-        target_rows = [[
-            _table_cell("Соперник", header=True), _table_cell("Цель", header=True),
-        ]]
+    guard_rows = [[_table_cell("Защита от", header=True),
+                   _table_cell("Выбор", header=True)]]
+    for target in players:
+        if target.id == driver.id:
+            continue
+        guard_rows.append([
+            _table_cell(target.title[:12]),
+            _table_cell(RichTextButton(button=RichMessageButton(
+                text="🛡️" if target.id in action.guards else "—",
+                callback_data=_callback("race_guard", driver.chat_id,
+                                        spot_id=target.id, chat_id=chat_id),
+            )), align="center"),
+        ])
+    blocks.append(InputRichBlockParagraph(
+        text=f"Защита от {len(action.guards)}/{count} игроков:"
+    ))
+    blocks.append(InputRichBlockTable(
+        cells=guard_rows, is_bordered=True, is_striped=True, is_compact=True,
+    ))
+    blocks.append(InputRichBlockTable(
+        cells=plan_rows, is_bordered=True, is_striped=True, is_compact=True,
+    ))
+    if picker:
+        role, slot = picker[0], int(picker[1:])
+        target_rows = [[_table_cell(
+            f"№{slot + 1}: {'забрать у' if role == 's' else 'передать'}",
+            header=True)]]
         for target in players:
             if target.id == driver.id:
                 continue
-            target_rows.append([
-                _table_cell(target.title[:12]),
-                _table_cell(RichTextButton(button=RichMessageButton(
-                    text="🎯" if target.id in selected_targets else "—",
-                    callback_data=_callback(
-                        "race_target", driver.chat_id, spot_id=target.id,
-                        chat_id=chat_id,
-                    ),
-                )), align="center"),
-            ])
-        blocks.append(InputRichBlockParagraph(
-            text=f"Выбрано целей: {len(selected_targets)}/{target_count}"
-        ))
+            target_rows.append([_table_cell(RichTextButton(button=RichMessageButton(
+                text=target.title[:16],
+                callback_data=_callback("race_target", driver.chat_id,
+                                        spot_id=target.id, event_type=picker,
+                                        chat_id=chat_id),
+            )))])
         blocks.append(InputRichBlockTable(
             cells=target_rows, is_bordered=True, is_striped=True, is_compact=True,
         ))
@@ -334,48 +385,68 @@ def _panel_message(game_state: GameState, driver: Driver, players, chat_id=None)
 
 
 def _panel_fallback(game_state: GameState, driver: Driver) -> str:
+    """Подготовить текст личной панели, если rich-интерфейс недоступен."""
     wheel = game_state.wheels.get(str(driver.id), "—")
-    action = game_state.actions.get(driver.id)
+    action = game_state.actions.get(driver.id, RaceAction(kind="nitro"))
     return (
         f"🎮 Ваш выбор\nШины: {_wheel_icon(wheel)}\n"
-        f"Карта: {_action_icon(action)}\n"
-        f"Помехи складываются; защита снижает каждую на {GUARD_ABSORPTION:.0%}.\n"
-        f"Для выбора используйте кнопки под сообщением."
+        f"План: {action.plan}\n"
+        f"Перевозок: {sum(-1 not in pair for pair in action.transfers)}"
+        f"/{game_state.target_count()}, защит: {len(action.guards)}.\n"
+        "Кнопки: шины, пары «забрать → передать», защита, план."
     )
 
 
-def _panel_keyboard(game_state: GameState, driver: Driver, players, chat_id=None):
+def _panel_keyboard(game_state: GameState, driver: Driver, players, chat_id=None,
+                    picker=None):
+    """Собрать обычные кнопки выбора, включая открытый список целей."""
     builder = InlineKeyboardBuilder()
     for wheel_id, icon in ((0, "🛞"), (1, "🌧️"), (2, "☀️")):
         builder.button(text=icon, callback_data=_callback(
             "race_wheel", driver.chat_id, spot_id=wheel_id, chat_id=chat_id,
         ))
-    for kind, label in (
-            ("neutral", "➖"), ("boost", "⚡ +5%"),
-            ("hinder", "🎯 −10%"), ("guard", f"🛡️ {GUARD_ABSORPTION:.0%}"),
-    ):
-        builder.button(text=label, callback_data=_callback(
-            "race_action", driver.chat_id, event_type=kind, chat_id=chat_id,
-        ))
-    action = game_state.actions.get(driver.id)
-    if action and action.kind == "hinder":
+    action = game_state.actions.get(driver.id, RaceAction(kind="nitro"))
+    names = {player.id: player.title[:10] for player in players}
+    for slot in range(game_state.target_count()):
+        source, recipient = (action.transfers[slot] if slot < len(action.transfers)
+                             else (-1, -1))
+        for role, target, icon in (("s", source, "⛽"), ("r", recipient, "🎁")):
+            builder.button(
+                text=f"{slot + 1}{icon} {names.get(target, 'выбрать')}",
+                callback_data=_callback("race_pick", driver.chat_id,
+                                        event_type=f"{role}{slot}", chat_id=chat_id),
+            )
+    for player in players:
+        if player.id != driver.id:
+            builder.button(
+                text=f"{'🛡️' if player.id in action.guards else '○'} {player.title[:10]}",
+                callback_data=_callback("race_guard", driver.chat_id,
+                                        spot_id=player.id, chat_id=chat_id),
+            )
+    for plan, label in (("early", "🚀"), ("steady", "⚖️"), ("late", "🏁")):
+        builder.button(text=f"{label}{'✓' if action.plan == plan else ''}",
+                       callback_data=_callback("race_plan", driver.chat_id,
+                                               event_type=plan, chat_id=chat_id))
+    if picker:
         for player in players:
             if player.id != driver.id:
-                mark = "🎯" if player.id in action.targets else "○"
                 builder.button(
-                    text=f"{mark} {player.title[:12]}",
+                    text=f"➡️ {player.title[:12]}",
                     callback_data=_callback("race_target", driver.chat_id,
-                                            spot_id=player.id, chat_id=chat_id),
+                                            spot_id=player.id, event_type=picker,
+                                            chat_id=chat_id),
                 )
     builder.button(
         text="✅ Готово",
         callback_data=_callback("race_confirm", driver.chat_id, chat_id=chat_id),
     )
-    builder.adjust(3, 2, 2, *([2] * len(players)), 1)
+    builder.adjust(3, *([2] * game_state.target_count()), *([2] * (len(players) - 1)),
+                   3, *([2] * (len(players) - 1) if picker else []), 1)
     return builder.as_markup()
 
 
 def _public_fallback_keyboard(game_state: GameState):
+    """Собрать кнопки общего сообщения без личных данных игроков."""
     builder = InlineKeyboardBuilder()
     add_button("🎮 Мой выбор", "race_panel", 0, builder)
     add_button("🔄 Обновить", "race_refresh", 0, builder)
@@ -386,11 +457,12 @@ def _public_fallback_keyboard(game_state: GameState):
 
 
 def _result_rich_message(simulation, players, game_state: GameState):
+    """Показать места и награды без журнала краж и подарков."""
     rows = [[
         _table_cell("🏁", header=True),
         _table_cell("👤", header=True),
         _table_cell("🛞", header=True),
-        _table_cell("🃏", header=True),
+        _table_cell("⚡", header=True),
         _table_cell("💟", header=True),
     ]]
     for place, player_idx in enumerate(simulation.winners, start=1):
@@ -399,7 +471,7 @@ def _result_rich_message(simulation, players, game_state: GameState):
             _table_cell(str(place), align="center"),
             _table_cell(_driver_mention(player, compact=True)),
             _table_cell(_wheel_icon(simulation.wheels[player_idx]), align="center"),
-            _table_cell(_action_icon(game_state.actions.get(player.id)), align="center"),
+            _table_cell(str(simulation.nitro[player_idx]), align="center"),
             _table_cell(f"+{simulation.prizes.get(place, 0)}", align="center"),
         ])
 
@@ -415,29 +487,30 @@ def _result_rich_message(simulation, players, game_state: GameState):
             cells=rows, is_bordered=True, is_striped=True, is_compact=True,
         ),
     ]
-    hindrances = [
-        event for event in simulation.events if event["kind"] == "hinder"
-    ]
-    if hindrances:
-        lines = []
-        for event in hindrances[:12]:
-            actor = players[event["actor"]].title
-            target = players[event["target"]].title
-            outcome = {
-                "success": "🎯",
-                "reduced": "🛡️🎯",
-            }[event["status"]]
-            lines.append(
-                f"{outcome} {actor} → {target} "
-                f"(−{event['penalty_applied']:.0%})"
-            )
-        if len(hindrances) > 12:
-            lines.append(f"…ещё {len(hindrances) - 12} воздействий")
-        blocks.append(InputRichBlockParagraph(text="\n".join(lines)))
     return InputRichMessage(blocks=blocks)
 
 
+def _nitro_rich_message(simulation, players):
+    """Показать итоговые запасы нитро сразу после закрытия выбора."""
+    rows = [[_table_cell("👤", header=True), _table_cell("Нитро", header=True)]]
+    for index, player in enumerate(players):
+        rows.append([
+            _table_cell(_driver_mention(player, compact=True)),
+            _table_cell(str(simulation.nitro[index]), align="center"),
+        ])
+    return InputRichMessage(blocks=[
+        InputRichBlockSectionHeading(text="⚡ Нитро перед стартом", size=1),
+        InputRichBlockParagraph(
+            text="Выбор закрыт. Показаны только итоговые запасы; "
+                 "перевозки, защита и планы соперников не раскрываются."
+        ),
+        InputRichBlockTable(cells=rows, is_bordered=True, is_striped=True,
+                            is_compact=True),
+    ])
+
+
 async def _update_public_race_message(bot, chat_id: int, game_state: GameState, players):
+    """Обновить общий статус подтверждений с текстовым запасным вариантом."""
     if not game_state.public_message_id:
         return
     try:
@@ -465,6 +538,7 @@ async def _update_public_race_message(bot, chat_id: int, game_state: GameState, 
 
 
 async def _send_selection_window(callback: CallbackQuery, game_state: GameState, session):
+    """Опубликовать окно выбора перед удалением старого сообщения набора."""
     chat_id = callback.message.chat.id
     players = [
         await DriverService(session).get_by_id(player_id)
@@ -528,6 +602,7 @@ async def _send_selection_window(callback: CallbackQuery, game_state: GameState,
     F.text.regexp(r"(?i).*((да начнется гонка)|(инфо гонка))"),
     flags={"lock_operation": "race", "long_operation": "upload_photo", "check_admin": True, "check_driver": True})
 async def game_race(message: Message, session: AsyncSession, driver: Driver, current_day, is_private):
+    """Создать лобби или показать актуальное состояние гонки в группе."""
     if is_private:
         await message.answer("Команда недоступна в личных сообщениях.")
         return
@@ -569,6 +644,7 @@ async def game_race(message: Message, session: AsyncSession, driver: Driver, cur
                               "long_operation": "upload_photo",
                               "check_driver": True})
 async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    """Списать взнос и добавить водителя в ещё открытый набор."""
     game_state = await get_state(callback.message.chat.id, session)
     if game_state is None:
         await send_alarm(callback, "⚠️ Начните Новую игру!")
@@ -619,6 +695,7 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
                               "check_admin": True,
                               "check_driver": True})
 async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
+    """Закрыть набор, открыть часовой выбор и запланировать старт."""
     chat_id = callback.message.chat.id
     game_state = await get_state(chat_id, session)
     if game_state is None:
@@ -642,18 +719,19 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
     await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
                                            f'{driver.title} Открывает окно выбора в игре "Гонки"')
     _schedule_deadline(callback.message.bot, chat_id, game_state)
-    await callback.answer("Окно выбора открыто на 10 минут")
+    await callback.answer("Окно выбора открыто на 1 час")
 
 
 async def _show_race_panel(callback, game_state: GameState, driver: Driver, session,
-                           chat_id: int):
+                           chat_id: int, picker=None):
+    """Показать или обновить личную панель только этому водителю."""
     players = [
         await DriverService(session).get_by_id(player_id)
         for player_id in game_state.player_ids
     ]
-    rich = _panel_message(game_state, driver, players, chat_id)
+    rich = _panel_message(game_state, driver, players, chat_id, picker)
     fallback = _panel_fallback(game_state, driver)
-    keyboard = _panel_keyboard(game_state, driver, players, chat_id)
+    keyboard = _panel_keyboard(game_state, driver, players, chat_id, picker)
     if (getattr(callback.message, "ephemeral_message_id", None)
             or callback.message.chat.type == "private"):
         await edit_rich(
@@ -668,6 +746,7 @@ async def _show_race_panel(callback, game_state: GameState, driver: Driver, sess
 
 
 async def _refresh_public_status(bot, chat_id, game_state, session):
+    """Перечитать участников и обновить общий счётчик подтверждений."""
     players = [
         await DriverService(session).get_by_id(player_id)
         for player_id in game_state.player_ids
@@ -679,6 +758,7 @@ async def _refresh_public_status(bot, chat_id, game_state, session):
                        flags={"check_driver": True})
 async def race_panel_callback(callback: CallbackQuery, callback_data: MyCallback,
                               session, driver: Driver):
+    """Открыть личную панель зарегистрированного участника."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if not _selection_open(game_state) or driver.id not in game_state.player_ids:
@@ -692,6 +772,7 @@ async def race_panel_callback(callback: CallbackQuery, callback_data: MyCallback
                        flags={"check_driver": True})
 async def race_refresh_callback(callback: CallbackQuery, callback_data: MyCallback,
                                 session, driver: Driver):
+    """Обновить общее сообщение по запросу из чата."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if game_state is None:
@@ -706,6 +787,7 @@ async def race_refresh_callback(callback: CallbackQuery, callback_data: MyCallba
                               "lock_operation": "race"})
 async def race_wheel_callback(callback: CallbackQuery, callback_data: MyCallback,
                               session, driver: Driver):
+    """Сохранить выбранные шины и снять старое подтверждение."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if not _selection_open(game_state):
@@ -722,23 +804,76 @@ async def race_wheel_callback(callback: CallbackQuery, callback_data: MyCallback
     await _refresh_public_status(callback.message.bot, chat_id, game_state, session)
 
 
-@router.callback_query(MyCallback.filter(F.action == "race_action"),
+@router.callback_query(MyCallback.filter(F.action == "race_plan"),
                        flags={"check_driver": True, "check_callback": True,
                               "lock_operation": "race"})
-async def race_action_callback(callback: CallbackQuery, callback_data: MyCallback,
-                               session, driver: Driver):
+async def race_plan_callback(callback: CallbackQuery, callback_data: MyCallback,
+                             session, driver: Driver):
+    """Сохранить тайный план расхода нитро."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if not _selection_open(game_state):
         await send_alarm(callback, "⚠️ Окно выбора закрыто.")
         return
     try:
-        game_state.choose_action(driver.id, callback_data.event_type)
+        game_state.choose_plan(driver.id, callback_data.event_type)
     except ValueError as error:
         await send_alarm(callback, f"⚠️ {error}")
         return
     await save_state(chat_id, game_state, session)
-    await callback.answer("Карта выбрана")
+    await callback.answer("План выбран")
+    await _show_race_panel(callback, game_state, driver, session, chat_id)
+    await _refresh_public_status(callback.message.bot, chat_id, game_state, session)
+
+
+def _parse_picker(picker, count):
+    """Проверить код стороны и номера пары из кнопки выбора цели."""
+    if (not isinstance(picker, str) or len(picker) != 2
+            or picker[0] not in ("s", "r") or not picker[1].isdigit()
+            or int(picker[1]) >= count):
+        raise ValueError("Invalid transfer slot")
+    return picker[0], int(picker[1])
+
+
+@router.callback_query(MyCallback.filter(F.action == "race_pick"),
+                       flags={"check_driver": True, "check_callback": True,
+                              "lock_operation": "race"})
+async def race_pick_callback(callback: CallbackQuery, callback_data: MyCallback,
+                             session, driver: Driver):
+    """Открыть список водителей для одной стороны пары перевозки."""
+    chat_id = _race_chat_id(callback, callback_data)
+    game_state = await get_state(chat_id, session)
+    if not _selection_open(game_state) or driver.id not in game_state.player_ids:
+        await send_alarm(callback, "⚠️ Окно выбора закрыто.")
+        return
+    try:
+        _parse_picker(callback_data.event_type, game_state.target_count())
+    except ValueError as error:
+        await send_alarm(callback, f"⚠️ {error}")
+        return
+    await _show_race_panel(callback, game_state, driver, session, chat_id,
+                           callback_data.event_type)
+    await callback.answer()
+
+
+@router.callback_query(MyCallback.filter(F.action == "race_guard"),
+                       flags={"check_driver": True, "check_callback": True,
+                              "lock_operation": "race"})
+async def race_guard_callback(callback: CallbackQuery, callback_data: MyCallback,
+                              session, driver: Driver):
+    """Переключить защиту от конкретного соперника."""
+    chat_id = _race_chat_id(callback, callback_data)
+    game_state = await get_state(chat_id, session)
+    if not _selection_open(game_state):
+        await send_alarm(callback, "⚠️ Окно выбора закрыто.")
+        return
+    try:
+        game_state.toggle_guard(driver.id, int(callback_data.spot_id))
+    except ValueError as error:
+        await send_alarm(callback, f"⚠️ {error}")
+        return
+    await save_state(chat_id, game_state, session)
+    await callback.answer("Защита обновлена")
     await _show_race_panel(callback, game_state, driver, session, chat_id)
     await _refresh_public_status(callback.message.bot, chat_id, game_state, session)
 
@@ -748,18 +883,24 @@ async def race_action_callback(callback: CallbackQuery, callback_data: MyCallbac
                               "lock_operation": "race"})
 async def race_target_callback(callback: CallbackQuery, callback_data: MyCallback,
                                session, driver: Driver):
+    """Записать источник или получателя выбранной перевозки."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if not _selection_open(game_state):
         await send_alarm(callback, "⚠️ Окно выбора закрыто.")
         return
     try:
-        game_state.toggle_target(driver.id, int(callback_data.spot_id))
+        role, slot = _parse_picker(callback_data.event_type,
+                                   game_state.target_count())
+        game_state.set_transfer(
+            driver.id, slot, "source" if role == "s" else "recipient",
+            int(callback_data.spot_id),
+        )
     except ValueError as error:
         await send_alarm(callback, f"⚠️ {error}")
         return
     await save_state(chat_id, game_state, session)
-    await callback.answer("Цели обновлены")
+    await callback.answer("Перевозка обновлена")
     await _show_race_panel(callback, game_state, driver, session, chat_id)
     await _refresh_public_status(callback.message.bot, chat_id, game_state, session)
 
@@ -769,13 +910,14 @@ async def race_target_callback(callback: CallbackQuery, callback_data: MyCallbac
                               "lock_operation": "race"})
 async def race_confirm_callback(callback: CallbackQuery, callback_data: MyCallback,
                                 session, driver: Driver):
+    """Подтвердить полный личный выбор для досрочного старта."""
     chat_id = _race_chat_id(callback, callback_data)
     game_state = await get_state(chat_id, session)
     if not _selection_open(game_state):
         await send_alarm(callback, "⚠️ Окно выбора закрыто.")
         return
     if not game_state.ready(driver.id):
-        await send_alarm(callback, "⚠️ Выберите шины и завершите выбор карты.")
+        await send_alarm(callback, "⚠️ Выберите шины и заполните все перевозки.")
         return
     game_state.confirm(driver.id)
     await save_state(chat_id, game_state, session)
@@ -785,6 +927,7 @@ async def race_confirm_callback(callback: CallbackQuery, callback_data: MyCallba
 
 
 async def execute_race(bot, chat_id: int, session, current_day=None):
+    """Закрыть выбор, показать запасы, отрисовать заезд и выдать награды."""
     game_state = await get_state(chat_id, session)
     if game_state is None or game_state.phase != "selection":
         return False
@@ -816,6 +959,21 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
     )
     game_state.phase = "running"
     await save_state(chat_id, game_state, session)
+    try:
+        await bot.send_rich_message(
+            chat_id=chat_id, rich_message=_nitro_rich_message(simulation, players),
+        )
+    except TelegramAPIError:
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="⚡ Нитро перед стартом:\n" + "\n".join(
+                    f"{player.title}: {simulation.nitro[index]}"
+                    for index, player in enumerate(players)
+                ),
+            )
+        except TelegramAPIError:
+            logger.exception("Не удалось опубликовать запас нитро в чате %s", chat_id)
     create_race_gif(
         game_state, players, chat_id=chat_id,
         output_path=f"race_{chat_id}.gif", frame_count=400, duration=2,
@@ -827,7 +985,7 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
         6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟",
     }
     current_day = current_day or datetime.now().date()
-    result_text = Text("🏁 Результаты «Гонки: риск и интриги»\n\n")
+    result_text = Text("🏁 Результаты «Гонки: нитро и интриги»\n\n")
     if timed_out:
         result_text += "⏱ Время вышло: незавершённые решения заменены безопасными.\n\n"
     for place, player_idx in enumerate(simulation.winners, start=1):
@@ -835,7 +993,7 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
         prize = simulation.prizes.get(place, 0)
         result_text += f"{medals.get(place, place)} .. "
         result_text += Spoiler(f"{player.title:…<20}")
-        result_text += f"  +{prize} 💟\n"
+        result_text += f"  ⚡{simulation.nitro[player_idx]} +{prize} 💟\n"
         if prize:
             player.attributes["karma"] = player.get_karma() + prize
             await AuditService(session).log_action(
@@ -860,6 +1018,7 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
 
 
 async def process_race_deadline(bot, chat_id: int):
+    """Автоматически начать заезд по дедлайну под общей блокировкой."""
     from config.database import db_pool
     from middlewares.lock_operation import shared_locks
     import asyncio
@@ -877,6 +1036,7 @@ async def process_race_deadline(bot, chat_id: int):
                        flags={"check_admin": True, "lock_operation": "race",
                               "long_operation": "upload_video"})
 async def race_start_now_callback(callback: CallbackQuery, session, current_day):
+    """Разрешить администратору стартовать раньше после всех подтверждений."""
     game_state = await get_state(callback.message.chat.id, session)
     if game_state is None or game_state.phase != "selection":
         await send_alarm(callback, "⚠️ Окно выбора уже закрыто.")
@@ -891,6 +1051,7 @@ async def race_start_now_callback(callback: CallbackQuery, session, current_day)
 
 
 async def get_media(players):
+    """Подготовить изображение лобби или стартовую сетку участников."""
     if len(players) < MIN_PLAYERS:
         file = get_random_filename("./pics/racing")
         if file:
@@ -933,15 +1094,20 @@ def get_random_filename(directory_path):
 
 
 async def get_game_message(game_state: GameState, session):
+    """Собрать правила, прогноз, призы и список участников для лобби."""
     content = Bold(f"🏁 Игра «Гонки» 🏎️🚙🚗🚌🛻🚜\n\n")
-    content += "Участники выбирают шины и одну карту после закрытия набора.\n\n"
+    content += "После закрытия набора участники тайно выбирают шины, перевозки нитро, защиту и план гонки.\n\n"
     content += (
-        "Погода может изменить всё: рискните взять слики, доверьтесь универсальным "
-        "шинам или подготовьтесь к дождю. А одна карта способна перевернуть заезд - "
-        "ускорить себя, помешать соперникам или пережить чужие атаки под защитой.\n\n"
+        "Каждая перевозка: попытайтесь забрать 1 нитро у одного соперника и передать другому. "
+        "Если кража заблокирована, платите своим нитро; если подарок заблокирован, "
+        "нитро остаётся вам. Защищайтесь от конкретных игроков. "
+        "Нитро сильнее на солнечной трассе и слабее в дождь: выбирайте "
+        "ранний рывок, ровный темп или финиш с учётом прогноза. "
+        "После выбора виден только итоговый запас нитро каждого, но не маршруты и планы гонки.\n\n"
     )
     content += (
-        f"Перед стартом заезда у участников будет 10 минут, чтобы выбрать шины и карту.\n"
+        f"На выбор даётся 1 час. Когда все подтвердят выбор, "
+        f"администратор сможет запустить заезд раньше.\n"
         f"Вступительный взнос - {FEE} 💟.\n\n"
     )
     count = len(game_state.player_ids)
@@ -978,6 +1144,7 @@ async def get_game_message(game_state: GameState, session):
 
 
 async def get_race_keyboard(game_state: GameState):
+    """Показать доступные кнопки набора и открытия окна выбора."""
     builder = InlineKeyboardBuilder()
     keyboard_sizes = []
     players_count = len(game_state.player_ids)

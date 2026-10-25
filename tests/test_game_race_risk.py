@@ -15,7 +15,6 @@ from handlers.game_race_handlers import (
     restore_race_deadlines, router, start_race_callback,
 )
 from utils.game_race_utils import GameState, SELECTION_WINDOW
-from utils.race_simulation import BOOST_BONUS, HINDER_PENALTY
 
 
 def players(count=8):
@@ -37,6 +36,17 @@ def state(count=8):
     return race
 
 
+def complete_choice(race, participant, *, plan="steady"):
+    race.set_wheels(participant, participant.id % 3)
+    race.choose_plan(participant.id, plan)
+    count = len(race.player_ids)
+    for slot in range(race.target_count()):
+        source = race.player_ids[(participant.id + slot) % count]
+        recipient = race.player_ids[(participant.id + race.target_count() + slot) % count]
+        race.set_transfer(participant.id, slot, "source", source)
+        race.set_transfer(participant.id, slot, "recipient", recipient)
+
+
 class RaceChoiceTests(unittest.TestCase):
     def test_window_closes_registration_immediately(self):
         race = state()
@@ -47,67 +57,65 @@ class RaceChoiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             race.add_player(players()[0])
         self.assertFalse(race.deadline_reached(datetime(2026, 10, 15, 12, 9)))
-        self.assertTrue(race.deadline_reached(datetime(2026, 10, 15, 12, 10)))
+        self.assertFalse(race.deadline_reached(datetime(2026, 10, 15, 12, 59)))
+        self.assertTrue(race.deadline_reached(datetime(2026, 10, 15, 13, 0)))
 
-    def test_scaled_targets_and_cleared_selection_on_card_change(self):
+    def test_scaled_transfers_guard_and_plan_changes(self):
         for count, target_count in ((8, 3), (9, 4), (10, 4), (11, 5), (12, 5)):
             race = state(count)
             self.assertEqual(race.target_count(), target_count)
-            race.set_wheels(players(count)[0], 1)
-            race.choose_action(1, "hinder")
+            complete_choice(race, players(count)[0])
+            self.assertEqual(len(race.actions[1].transfers), target_count)
             for target_id in range(2, target_count + 2):
-                race.toggle_target(1, target_id)
-            self.assertEqual(len(race.actions[1].targets), target_count)
+                race.toggle_guard(1, target_id)
             with self.assertRaises(ValueError):
-                race.toggle_target(1, target_count + 2)
+                race.toggle_guard(1, target_count + 2)
             with self.assertRaises(ValueError):
-                race.toggle_target(1, 1)
+                race.toggle_guard(1, 1)
             race.confirm(1)
             self.assertIn(1, race.confirmed)
-            race.choose_action(1, "boost")
-            self.assertEqual(race.actions[1].targets, ())
-            self.assertEqual(race.actions[1].bonus, BOOST_BONUS)
+            race.choose_plan(1, "late")
+            self.assertEqual(len(race.actions[1].transfers), target_count)
+            self.assertEqual(race.actions[1].plan, "late")
             self.assertNotIn(1, race.confirmed)
 
     def test_roundtrip_and_lane_mapping(self):
         race = state(8)
-        race.choose_action(1, "hinder")
-        for target in (2, 3, 4):
-            race.toggle_target(1, target)
-        race.set_wheels(players()[0], 2)
+        complete_choice(race, players()[0], plan="early")
+        race.toggle_guard(1, 2)
         race.confirm(1)
         restored = GameState.from_dict(race.to_dict())
         self.assertEqual(restored.to_dict(), race.to_dict())
-        self.assertEqual(restored.resolve_actions()[0].targets, (1, 2, 3))
-        self.assertEqual(restored.resolve_actions()[0].penalty, HINDER_PENALTY)
+        self.assertEqual(restored.resolve_actions()[0].transfers,
+                         ((1, 4), (2, 5), (3, 6)))
+        self.assertEqual(restored.resolve_actions()[0].guards, (1,))
+        self.assertEqual(restored.resolve_actions()[0].plan, "early")
 
     def test_early_start_only_after_everyone_confirms(self):
         race = state()
         for participant in players():
-            race.set_wheels(participant, 0)
-            race.choose_action(participant.id, "guard")
+            complete_choice(race, participant)
             race.confirm(participant.id)
         self.assertTrue(race.all_ready())
-        race.choose_action(2, "hinder")
+        race.choose_plan(2, "early")
         self.assertFalse(race.all_ready())
         race.fill_missing_choices()
-        self.assertEqual(race.actions[2].kind, "neutral")
+        self.assertEqual(race.actions[2].kind, "nitro")
 
     def test_compact_rich_table_and_inline_cell_buttons(self):
         race = state()
         race.set_wheels(players()[0], 0)
-        race.choose_action(1, "hinder")
         panel = _panel_message(race, players()[0], players())
         tables = [block for block in panel.blocks if isinstance(block, InputRichBlockTable)]
-        self.assertEqual(len(tables), 3)
-        self.assertEqual(len(tables[-1].cells), 8)
-        self.assertIsInstance(tables[-1].cells[1][1].text, RichTextButton)
+        self.assertEqual(len(tables), 4)
+        self.assertEqual(len(tables[1].cells), 4)
+        self.assertIsInstance(tables[1].cells[1][1].text, RichTextButton)
         self.assertTrue(all(table.is_compact for table in tables))
         public = _public_race_message(race, players())
         public_table = next(
             block for block in public.blocks if isinstance(block, InputRichBlockTable)
         )
-        self.assertEqual(len(public_table.cells[0]), 4)
+        self.assertEqual(len(public_table.cells[0]), 2)
         self.assertTrue(any(
             isinstance(block, InputRichBlockButtons) for block in public.blocks
         ))
@@ -142,8 +150,7 @@ class RaceSettlementTests(unittest.IsolatedAsyncioTestCase):
         race = state()
         entrants = players()
         for participant in entrants:
-            race.set_wheels(participant, participant.id % 3)
-            race.choose_action(participant.id, "boost")
+            complete_choice(race, participant)
             race.confirm(participant.id)
         session = AsyncMock()
         bot = AsyncMock()
@@ -166,7 +173,12 @@ class RaceSettlementTests(unittest.IsolatedAsyncioTestCase):
             remove.assert_awaited_once_with(-123, session)
             session.commit.assert_awaited()
             bot.send_animation.assert_awaited_once()
-            bot.send_rich_message.assert_awaited_once()
+            self.assertEqual(bot.send_rich_message.await_count, 2)
+            sent = [call[0] for call in bot.mock_calls
+                    if call[0] in ("send_rich_message", "send_animation")]
+            self.assertEqual(sent, [
+                "send_rich_message", "send_animation", "send_rich_message",
+            ])
         self.assertEqual(sum(p.attributes["karma"] - 100 for p in entrants), 8 * 50)
 
 

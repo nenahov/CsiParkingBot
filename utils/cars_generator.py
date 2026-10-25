@@ -8,7 +8,9 @@ from PIL import Image, ImageDraw, ImageOps, ImageFilter, ImageFont
 from moviepy import ImageSequenceClip
 
 from utils.game_race_utils import GameState
-from utils.race_simulation import RaceAction, RaceSimulationResult, resolve_race_simulation
+from utils.race_simulation import (
+    NITRO_PULSE_FRAMES, RaceAction, RaceSimulationResult, resolve_race_simulation,
+)
 from utils.weather_generator import make_sun_glare_layer, get_clouds_layer, add_edge_fade_mask, make_rain_layer
 
 logger = logging.getLogger(__name__)
@@ -198,6 +200,7 @@ def generate_avatar_preview_image(current_index: int) -> io.BytesIO:
 
 
 def get_car(current_index):
+    """Вырезать спрайт выбранной гоночной машины из общего листа."""
     current_index = current_index
     return extract_sprite(cars3, (50 * (current_index % 12), 100 * (current_index // 12),
                                   50 * (1 + (current_index % 12)), 100 * (1 + (current_index // 12))))
@@ -290,9 +293,7 @@ def draw_race_track(players, lane_height=70, track_length=800,
 
 def draw_start_race_track(players, lane_height=70, track_length=800,
                           bg_color=(50, 50, 50)):
-    """
-    Рисует прямую гоночную трассу с машинами на старте.
-    """
+    """Нарисовать прямую трассу с машинами на стартовых позициях."""
     img = draw_race_track(players, lane_height=lane_height,
                           track_length=track_length,
                           bg_color=bg_color)
@@ -314,12 +315,12 @@ def create_race_gif(
         simulation_result: RaceSimulationResult | None = None,
         actions: dict[int, RaceAction] | None = None,
 ):
-    """
-    Создаёт GIF с "гонкой" машин по нарисованной трассе.
+    """Создать GIF и MP4 по уже рассчитанным позициям и импульсам нитро.
 
     :param output_path: куда сохранить итоговый GIF
     :param frame_count: число кадров в анимации
     :param duration: длительность одного кадра в миллисекундах
+    :param simulation_result: общий результат для видео и таблицы мест
     """
     # Загружаем изображения машин
     lane_count = len(players)
@@ -368,6 +369,10 @@ def create_race_gif(
             x = int(simulation_result.position_at(idx, frame_index))
             # Вертикаль: центрируем машину в своей полосе
             y = idx * 70 + (70 - car_h) // 2
+            if (simulation_result.nitro_pulses
+                    and any(start <= frame_index < start + NITRO_PULSE_FRAMES
+                            for start in simulation_result.nitro_pulses[idx])):
+                draw_nitro_flame(frame, x, y, car.size)
             draw_car_with_shadow(car, frame, x, y)
             if x >= max_x - finish_block_size * 2:
                 draw_car_with_shadow(car, frame, 0, y)
@@ -402,7 +407,25 @@ def create_race_gif(
     return simulation_result.winners
 
 
+def draw_nitro_flame(frame, x, y, size):
+    """Нарисовать небольшое синее свечение под машиной и за её кормой."""
+    width, height = size
+    center_y = y + height // 2
+    length = min(18, max(7, width // 4))
+    layer = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+    brush = ImageDraw.Draw(layer)
+    brush.ellipse((x - length, center_y - max(3, height // 4),
+                   x + max(3, width // 5), center_y + max(3, height // 4)),
+                  fill=(0, 130, 255, 85))
+    brush.polygon([(x - length, center_y),
+                   (x + max(2, width // 8), center_y - max(2, height // 8)),
+                   (x + max(2, width // 8), center_y + max(2, height // 8))],
+                  fill=(45, 190, 255, 180))
+    frame.alpha_composite(layer)
+
+
 def get_weather_for_segments(seg_count, game_state: GameState, players):
+    """Выбрать погоду участков для старого самостоятельного рендера."""
     result = []
     # цикл от 1 до 2 включительно
     for i in range(1, 3):
@@ -433,6 +456,7 @@ def draw_car_with_shadow(
         shadow_dy=5,
         blur_radius=10
 ):
+    """Наложить спрайт машины и мягкую тень на кадр трассы."""
     # Создаем тень
     shadow = Image.new("RGBA", car_image.size, (0, 0, 0, 0))
     shadow.putalpha(car_image.split()[3])
@@ -449,6 +473,7 @@ def draw_car_with_shadow(
 
 
 def get_frame_segment(frame, segment_index, seg_count):
+    """Вырезать участок кадра для локального погодного эффекта."""
     w, h = frame.size
     seg_w = w // seg_count
     seg_x = seg_w * segment_index
