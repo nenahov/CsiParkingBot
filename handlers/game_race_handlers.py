@@ -976,7 +976,7 @@ async def execute_race(bot, chat_id: int, session, current_day=None):
             logger.exception("Не удалось опубликовать запас нитро в чате %s", chat_id)
     create_race_gif(
         game_state, players, chat_id=chat_id,
-        output_path=f"race_{chat_id}.gif", frame_count=400, duration=2,
+        output_path=None, frame_count=400, duration=2,
         simulation_result=simulation,
     )
 
