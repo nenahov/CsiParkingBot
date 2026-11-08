@@ -7,7 +7,7 @@ from utils.race_simulation import (
     action_from_dict, action_to_dict,
 )
 
-SELECTION_WINDOW = timedelta(hours=1)
+SELECTION_WINDOW = timedelta(days=2)
 
 
 class GameState:
@@ -99,7 +99,7 @@ class GameState:
             raise ValueError("Selection is closed or player is not registered")
 
     def begin_selection(self, now: datetime, seed: int):
-        """Закрыть набор и открыть часовое окно тайных решений."""
+        """Закрыть набор и открыть окно тайных решений на двое суток."""
         if self.phase != "lobby" or len(self.player_ids) < 7:
             raise ValueError("Not enough players or registration already closed")
         self.phase = "selection"
@@ -108,7 +108,7 @@ class GameState:
         self.rules_version = NITRO_RULES_VERSION
 
     def migrate_legacy_selection(self, now: datetime):
-        """Сохранить состав и шины, сбросить старые карты и дать новый час."""
+        """Сохранить состав и шины, сбросить старые карты и дать двое суток."""
         if self.phase != "selection" or self.rules_version == NITRO_RULES_VERSION:
             return False
         self.actions.clear()

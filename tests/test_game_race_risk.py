@@ -1,6 +1,6 @@
 import json
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -10,8 +10,9 @@ from aiogram.types import InputRichBlockButtons, InputRichBlockTable, RichTextBu
 
 from handlers.driver_callback import MyCallback
 from handlers.game_race_handlers import (
-    _panel_keyboard, _panel_message, _public_race_message, _send_selection_window,
-    _race_chat_id, execute_race, get_race_keyboard, get_state,
+    _deadline_text, _panel_keyboard, _panel_message, _public_race_message,
+    _send_selection_window, _race_chat_id, execute_race, get_game_message,
+    get_race_keyboard, get_state,
     restore_race_deadlines, router, start_race_callback,
 )
 from utils.game_race_utils import GameState, SELECTION_WINDOW
@@ -50,15 +51,24 @@ def complete_choice(race, participant, *, plan="steady"):
 class RaceChoiceTests(unittest.TestCase):
     def test_window_closes_registration_immediately(self):
         race = state()
+        self.assertEqual(SELECTION_WINDOW, timedelta(days=2))
         self.assertEqual(
             datetime.fromisoformat(race.selection_deadline),
-            datetime(2026, 10, 15, 12, 0) + SELECTION_WINDOW,
+            datetime(2026, 10, 17, 12, 0),
         )
         with self.assertRaises(ValueError):
             race.add_player(players()[0])
-        self.assertFalse(race.deadline_reached(datetime(2026, 10, 15, 12, 9)))
-        self.assertFalse(race.deadline_reached(datetime(2026, 10, 15, 12, 59)))
-        self.assertTrue(race.deadline_reached(datetime(2026, 10, 15, 13, 0)))
+        self.assertFalse(race.deadline_reached(datetime(2026, 10, 15, 13, 0)))
+        self.assertFalse(race.deadline_reached(datetime(2026, 10, 16, 12, 0)))
+        self.assertFalse(race.deadline_reached(datetime(2026, 10, 17, 11, 59, 59)))
+        self.assertTrue(race.deadline_reached(datetime(2026, 10, 17, 12, 0)))
+        self.assertTrue(race.deadline_reached(datetime(2026, 10, 17, 12, 0, 1)))
+
+    def test_deadline_text_includes_date_and_time(self):
+        race = state()
+        self.assertEqual(_deadline_text(race), "17.10 12:00")
+        public = _public_race_message(race, players())
+        self.assertIn("17.10 12:00", str(public.model_dump(exclude_none=True)))
 
     def test_scaled_transfers_guard_and_plan_changes(self):
         for count, target_count in ((8, 3), (9, 4), (10, 4), (11, 5), (12, 5)):
@@ -201,6 +211,10 @@ class RaceStateRestoreTests(unittest.IsolatedAsyncioTestCase):
             await restore_race_deadlines(Mock(), Mock())
         scheduler.add_job.assert_called_once()
         self.assertEqual(scheduler.add_job.call_args.kwargs["id"], "race-deadline--104")
+        self.assertEqual(
+            scheduler.add_job.call_args.kwargs["run_date"],
+            datetime(2026, 10, 17, 12, 0),
+        )
 
     async def test_legacy_state_is_not_treated_as_active_game(self):
         service = Mock()
@@ -212,6 +226,11 @@ class RaceStateRestoreTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RaceLobbyKeyboardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lobby_rules_announce_two_day_selection_window(self):
+        race = GameState({"1": [2, 3, 5], "2": [3, 4, 3]})
+        content, _, _ = await get_game_message(race, Mock())
+        self.assertIn("На выбор даётся 2 суток.", content.as_html())
+
     async def test_lobby_only_offers_registration_and_admin_start(self):
         race = GameState({"1": [2, 3, 5], "2": [3, 4, 3]})
         for count, expected in ((0, {"join_race"}), (8, {"join_race", "start_race"})):
@@ -225,6 +244,38 @@ class RaceLobbyKeyboardTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RaceSelectionWindowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_schedules_two_day_deadline_and_announces_window(self):
+        race = GameState({"1": [2, 3, 5], "2": [3, 4, 3]})
+        race.player_ids = list(range(1, 9))
+        bot = Mock()
+        message = SimpleNamespace(chat=SimpleNamespace(id=-100123), bot=bot)
+        callback = SimpleNamespace(message=message, answer=AsyncMock())
+        audit = Mock()
+        audit.log_action = AsyncMock()
+        scheduler = Mock()
+        with (
+            patch("handlers.game_race_handlers.get_state",
+                  new_callable=AsyncMock, return_value=race),
+            patch("handlers.game_race_handlers._send_selection_window",
+                  new_callable=AsyncMock, return_value=Mock()),
+            patch("handlers.game_race_handlers.AuditService", return_value=audit),
+            patch("handlers.game_race_handlers._race_scheduler", scheduler),
+            patch("handlers.game_race_handlers.datetime") as clock,
+        ):
+            clock.now.return_value = datetime(2026, 11, 8, 12)
+            clock.fromisoformat.side_effect = datetime.fromisoformat
+            await start_race_callback(
+                callback, Mock(), Mock(),
+                SimpleNamespace(id=1, title="Админ"), None,
+            )
+        self.assertEqual(race.selection_deadline, "2026-11-10T12:00:00")
+        scheduler.add_job.assert_called_once()
+        self.assertEqual(
+            scheduler.add_job.call_args.kwargs["run_date"],
+            datetime(2026, 11, 10, 12),
+        )
+        callback.answer.assert_awaited_once_with("Окно выбора открыто на 2 суток")
+
     async def test_publishes_and_saves_before_deleting_lobby(self):
         bot = Mock()
         sent = SimpleNamespace(message_id=456)

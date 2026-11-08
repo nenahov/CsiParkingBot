@@ -229,6 +229,7 @@ class LegacyMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved["rules_version"], "nitro-transfer-1")
         session.commit.assert_awaited_once()
         bot.send_message.assert_awaited_once()
+        self.assertIn("У вас 2 суток", bot.send_message.await_args.kwargs["text"])
         scheduler.add_job.assert_called_once()
 
 

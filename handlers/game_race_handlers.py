@@ -110,7 +110,7 @@ async def restore_race_deadlines(bot, session):
                 await bot.send_message(
                     chat_id=int(chat_id),
                     text="🏁 Правила гонки обновились. Старые карты сброшены, "
-                         "шины сохранены. У вас новый час, чтобы выбрать перевозки "
+                         "шины сохранены. У вас 2 суток, чтобы выбрать перевозки "
                          "нитро, защиту и план гонки.",
                 )
             except TelegramAPIError:
@@ -191,11 +191,11 @@ def _wheel_icon(wheels):
 
 
 def _deadline_text(game_state: GameState):
-    """Показать время закрытия выбора в коротком формате."""
+    """Показать дату и время закрытия выбора в коротком формате."""
     if not game_state.selection_deadline:
         return "окно выбора не открыто"
     deadline = datetime.fromisoformat(game_state.selection_deadline)
-    return deadline.strftime("%H:%M")
+    return deadline.strftime("%d.%m %H:%M")
 
 
 def _selection_open(game_state: GameState | None) -> bool:
@@ -695,7 +695,7 @@ async def join_race_callback(callback: CallbackQuery, callback_data: MyCallback,
                               "check_admin": True,
                               "check_driver": True})
 async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback, session, driver: Driver, current_day):
-    """Закрыть набор, открыть часовой выбор и запланировать старт."""
+    """Закрыть набор, открыть выбор на двое суток и запланировать старт."""
     chat_id = callback.message.chat.id
     game_state = await get_state(chat_id, session)
     if game_state is None:
@@ -719,7 +719,7 @@ async def start_race_callback(callback: CallbackQuery, callback_data: MyCallback
     await AuditService(session).log_action(driver.id, UserActionType.GAME, current_day, 0,
                                            f'{driver.title} Открывает окно выбора в игре "Гонки"')
     _schedule_deadline(callback.message.bot, chat_id, game_state)
-    await callback.answer("Окно выбора открыто на 1 час")
+    await callback.answer("Окно выбора открыто на 2 суток")
 
 
 async def _show_race_panel(callback, game_state: GameState, driver: Driver, session,
@@ -1106,7 +1106,7 @@ async def get_game_message(game_state: GameState, session):
         "После выбора виден только итоговый запас нитро каждого, но не маршруты и планы гонки.\n\n"
     )
     content += (
-        f"На выбор даётся 1 час. Когда все подтвердят выбор, "
+        f"На выбор даётся 2 суток. Когда все подтвердят выбор, "
         f"администратор сможет запустить заезд раньше.\n"
         f"Вступительный взнос - {FEE} 💟.\n\n"
     )
