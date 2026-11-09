@@ -174,7 +174,7 @@ class NitroStateAndPrivacyTests(unittest.TestCase):
             self.assertNotIn("source", rendered)
             self.assertNotIn("recipient", rendered)
             self.assertNotIn("late", rendered)
-        private = _panel_message(race, people[0], people)
+        private = _panel_message(race, people[0], people, view="review")
         self.assertIn("Забрать у", text_of(private))
         result = _result_rich_message(simulation, people, race)
         self.assertNotIn("source", text_of(result))

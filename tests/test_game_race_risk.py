@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendRichMessage
-from aiogram.types import InputRichBlockButtons, InputRichBlockTable, RichTextButton
+from aiogram.types import InputRichBlockButtons, InputRichBlockTable
 
 from handlers.driver_callback import MyCallback
 from handlers.game_race_handlers import (
@@ -112,20 +112,25 @@ class RaceChoiceTests(unittest.TestCase):
         race.fill_missing_choices()
         self.assertEqual(race.actions[2].kind, "nitro")
 
-    def test_compact_rich_table_and_inline_cell_buttons(self):
+    def test_private_panel_shows_one_step_and_public_table_stays_compact(self):
         race = state()
         race.set_wheels(players()[0], 0)
         panel = _panel_message(race, players()[0], players())
         tables = [block for block in panel.blocks if isinstance(block, InputRichBlockTable)]
-        self.assertEqual(len(tables), 4)
-        self.assertEqual(len(tables[1].cells), 4)
-        self.assertIsInstance(tables[1].cells[1][1].text, RichTextButton)
-        self.assertTrue(all(table.is_compact for table in tables))
+        self.assertEqual(tables, [])
+        self.assertIn("Маршрут 1 из 3", panel.blocks[0].text)
+        actions = {
+            MyCallback.unpack(button.callback_data).action
+            for block in panel.blocks if isinstance(block, InputRichBlockButtons)
+            for button in block.buttons
+        }
+        self.assertEqual(actions, {"race_target", "race_step"})
         public = _public_race_message(race, players())
         public_table = next(
             block for block in public.blocks if isinstance(block, InputRichBlockTable)
         )
         self.assertEqual(len(public_table.cells[0]), 2)
+        self.assertTrue(public_table.is_compact)
         self.assertTrue(any(
             isinstance(block, InputRichBlockButtons) for block in public.blocks
         ))
